@@ -1,6 +1,6 @@
 # What is Keycard?
 
-Keycard is an implementation of a BIP-32 HD wallet running on Javacard 3.0.4+ (see implementation notes)
+Keycard is an implementation of a BIP-32 HD wallet running on Javacard 3.0.5 (see implementation notes)
 
 It supports among others
 - key generation, derivation and signing
@@ -23,11 +23,7 @@ Keycard is at the center of several projects, check the [ecosystem of projects](
 
 Should you wish to work on an issue, please claim it first by commenting on the GitHub issue that you want to work on it. This is to prevent duplicated efforts from contributors on the same issue. 
 
-If you just want to use the Keycard as your hardware wallet there are currently three apps supporting it
-
-1. Status [[Android](https://play.google.com/store/apps/details?id=im.status.ethereum)][[iOS](https://apps.apple.com/us/app/status-private-communication/id1178893006)]
-2. WallETH [[Android](https://play.google.com/store/apps/details?id=org.walleth)]
-3. Enno Walet https://ennowallet.com/
+If you just want to use Keycard as your hardware wallet, you can choose from any compatible wallet in this list (apply the 'Keycard' filter): https://keycard.tech/wallets/
 
 # How to build the project?
 
