@@ -958,6 +958,27 @@ public class KeycardTest {
   }
 
   @Test
+  @DisplayName("GET CHALLENGE command")
+  void getChallengeTest() throws Exception {
+    // P1=0 is invalid
+    APDUResponse response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 0, 0, new byte[0]));
+    assertEquals(0x6A86, response.getSw());
+
+    // Valid lengths return correct number of random bytes
+    response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 16, 0, new byte[0]));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(16, response.getData().length);
+
+    response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 32, 0, new byte[0]));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(32, response.getData().length);
+
+    response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 255, 0, new byte[0]));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(255, response.getData().length);
+  }
+
+  @Test
   @DisplayName("GENERATE KEY command")
   @Capabilities("keyManagement")
   void generateKeyTest() throws Exception {
