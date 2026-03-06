@@ -28,6 +28,7 @@ public class KeycardApplet extends Applet {
   static final byte INS_EXPORT_KEY = (byte) 0xC2;
   static final byte INS_GET_DATA = (byte) 0xCA;
   static final byte INS_STORE_DATA = (byte) 0xE2;
+  static final byte INS_GET_CHALLENGE = (byte) 0x84;
 
   static final short SW_REFERENCED_DATA_NOT_FOUND = (short) 0x6A88;
 
@@ -292,7 +293,10 @@ public class KeycardApplet extends Applet {
           break;
         case INS_FACTORY_RESET:
           factoryReset(apdu);
-          return;          
+          return;         
+        case INS_GET_CHALLENGE:
+          getChallenge(apdu);
+          return;
         default:
           ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
           break;
@@ -376,6 +380,8 @@ public class KeycardApplet extends Applet {
       pin = mainPIN;
     } else if (apduBuffer[ISO7816.OFFSET_INS] == IdentApplet.INS_IDENTIFY_CARD) {
       IdentApplet.identifyCard(apdu, null, signature);
+    } else if (apduBuffer[ISO7816.OFFSET_INS] == INS_GET_CHALLENGE) {
+      getChallenge(apdu);
     } else {
       ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
     }
@@ -1075,6 +1081,18 @@ public class KeycardApplet extends Applet {
     if (JCSystem.isObjectDeletionSupported()) {
       JCSystem.requestObjectDeletion();
     }
+  }
+
+  private void getChallenge(APDU apdu) {
+    byte[] apduBuffer = apdu.getBuffer();
+    short len = (short)(apduBuffer[ISO7816.OFFSET_P1] & 0xFF);
+
+    if (len == 0) {
+      ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+    }
+
+    crypto.random.generateData(apduBuffer, (short) 0, len);
+    apdu.setOutgoingAndSend((short) 0, len);
   }
 
   /**
