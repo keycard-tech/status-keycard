@@ -60,9 +60,9 @@ before running the tests.
 
 * The applet requires JavaCard 3.0.5 or later.
 * The class byte of the APDU is not checked since there are no conflicting INS code.
-* The GlobalPlatform ISD keys are set to 404142434445464748494a4b4c4d4e4f or c212e073ff8b4bbfaff4de8ab655221f.
+* The GlobalPlatform ISD keys are set to 404142434445464748494a4b4c4d4e4f (GlobalPlatform default keys) or c212e073ff8b4bbfaff4de8ab655221f (Keycard development cards default keys).
 
-The algorithms the card must support are at least:
+Following algorithms are part of JavaCard 3.0.4 and must be supported by the card:
 * Cipher.ALG_AES_BLOCK_128_CBC_NOPAD
 * Cipher.ALG_AES_CBC_ISO9797_M2
 * KeyAgreement.ALG_EC_SVDP_DH_PLAIN
@@ -74,7 +74,7 @@ The algorithms the card must support are at least:
 * Signature.ALG_AES_MAC_128_NOPAD
 * Signature.ALG_ECDSA_SHA_256
 
-Best performance is achieved if the card supports:
+Following algorithm is part of JavaCard 3.0.5 and best performance is achieved if the card supports it:
 * Signature.ALG_HMAC_SHA_512
 
 # Other related repositories
