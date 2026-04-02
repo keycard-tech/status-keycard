@@ -1,13 +1,13 @@
 package im.status.keycard;
 
-import javacard.security.ECKey;
-import javacard.security.ECPrivateKey;
-import javacard.security.KeyAgreement;
-import javacard.security.KeyBuilder;
+import im.status.keycard.math.BigNumberMath;
+import javacard.framework.ISO7816;
+import javacard.framework.ISOException;
+import javacard.framework.Util;
+import javacard.security.*;
 
 /**
- * Utility methods to work with the SECP256k1 curve. This class is not meant to be instantiated, but its init method
- * must be called during applet installation.
+ * Utility methods to work with the SECP256k1 curve.
  */
 public class SECP256k1 {
   static final byte SECP256K1_FP[] = {
@@ -52,6 +52,17 @@ public class SECP256k1 {
 
   private static final byte ALG_EC_SVDP_DH_PLAIN_XY = 6; // constant from JavaCard 3.0.5
 
+  private static final short SCHNORR_SK_OFF = (short) 0;
+  private static final short SCHNORR_PUB_OFF = (short) 32;
+  private static final short SCHNORR_K_OFF = (short) 97;
+  private static final short SCHNORR_OUT_SIG_OFF = (short) 34;
+
+  static final byte SIGN_ECDSA = 0x00;
+  static final byte SIGN_ED25519 = 0x01;
+  static final byte SIGN_BLS12_381 = 0x02;
+  static final byte SIGN_BIP340_SCHNORR = 0x03;
+
+  static final byte TLV_RAW_SIGNATURE = (byte) 0x80;
 
   private KeyAgreement ecPointMultiplier;
   ECPrivateKey tmpECPrivateKey;
@@ -92,7 +103,6 @@ public class SECP256k1 {
     return multiplyPoint(privateKey, SECP256K1_G, (short) 0, (short) SECP256K1_G.length, pubOut, pubOff);
   }
 
-
   /**
    * Derives the public key from the given private key and outputs it in the pubOut buffer. This is done by multiplying
    * the private key by the G point of the curve.
@@ -122,5 +132,74 @@ public class SECP256k1 {
   short multiplyPoint(ECPrivateKey privateKey, byte[] point, short pointOff, short pointLen, byte[] out, short outOff) {
     ecPointMultiplier.init(privateKey);
     return ecPointMultiplier.generateSecret(point, pointOff, pointLen, out, outOff);
+  }
+
+  void schnorrPrivPub(Crypto crypto, byte[] key, short keyOff) {
+    derivePublicKey(key, keyOff, crypto.scratch, SCHNORR_PUB_OFF);
+    if ((crypto.scratch[(short)(SCHNORR_PUB_OFF + 64)] & (byte) 0x01) == (byte) 1) {
+      Util.arrayFillNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), (short) 32, (byte) 0);
+      BigNumberMath.modSub(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), (short) 32, key, keyOff, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+      Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), key, keyOff, (short) 32);
+    }
+  }
+
+  short schnorrSign(Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
+    key.getS(crypto.scratch, SCHNORR_SK_OFF);
+    schnorrPrivPub(crypto, crypto.scratch, SCHNORR_SK_OFF);
+    Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), out, outOff, (short) 32);
+
+    while (true) {
+      crypto.random.generateData(crypto.scratch, SCHNORR_K_OFF, (short) 32);
+      crypto.bip0340_init_sha256(Crypto.BIP0340_AUX);
+      crypto.sha256.doFinal(crypto.scratch, SCHNORR_K_OFF, (short) 32, crypto.scratch, SCHNORR_K_OFF);
+      crypto.xor256(crypto.scratch, SCHNORR_K_OFF, crypto.scratch, SCHNORR_SK_OFF);
+      crypto.bip0340_init_sha256(Crypto.BIP0340_NONCE);
+      crypto.sha256.update(crypto.scratch, SCHNORR_K_OFF, (short) 32);
+      crypto.sha256.update(out, outOff, (short) 32);
+      crypto.sha256.doFinal(hash, hashOff, (short) 32, crypto.scratch, SCHNORR_K_OFF);
+      BigNumberMath.modRed(crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+      if (!crypto.isZero256(crypto.scratch, SCHNORR_K_OFF)) {
+        break;
+      }
+    }
+
+    schnorrPrivPub(crypto, crypto.scratch, SCHNORR_K_OFF);
+    crypto.bip0340_init_sha256(Crypto.BIP0340_CHALLENGE);
+    crypto.sha256.update(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), (short) 32);
+    crypto.sha256.update(out, outOff, (short) 32);
+    crypto.sha256.doFinal(hash, hashOff, (short) 32, out, (short) (outOff + SCHNORR_OUT_SIG_OFF));
+    BigNumberMath.modRed(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, SECP256K1_R, (short) 0, (short) 32);
+
+    out[outOff] = TLV_RAW_SIGNATURE;
+    out[(short)(outOff + 1)] = (byte) 64;
+    Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), out, (short) (outOff + 2), (short) 32);
+
+    BigNumberMath.modMul(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_SK_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+    BigNumberMath.modAdd(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+
+    return (short) 66;
+  }
+
+  short ecdsaSign(Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
+    crypto.ecdsa.init(key, Signature.MODE_SIGN);
+
+    short sigLen = crypto.ecdsa.signPreComputedHash(hash, hashOff, MessageDigest.LENGTH_SHA_256, out, outOff);
+    sigLen += crypto.fixS(out, outOff);
+
+    return sigLen;
+  }
+
+  short signHash(byte algo, Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
+    switch(algo) {
+      case SIGN_ECDSA:
+        return ecdsaSign(crypto, key, hash, hashOff, out, outOff);
+      case SIGN_BIP340_SCHNORR:
+        return schnorrSign(crypto, key, hash, hashOff, out, outOff);
+      case SIGN_ED25519:
+      case SIGN_BLS12_381:
+      default:
+        ISOException.throwIt(ISO7816.SW_FUNC_NOT_SUPPORTED);
+        return -1;
+    }
   }
 }

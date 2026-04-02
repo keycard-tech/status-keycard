@@ -815,8 +815,11 @@ public class KeycardTest {
     assertEquals(0x9000, response.getSw());
     verifyKeyUID(response.getData(), ((ECPublicKey) keyPair.getPublic()));
 
+    byte[] seed = new byte[64];
+    new Random().nextBytes(seed);
+
     // Check seed load
-    response = cmdSet.loadKey(keyPair.getPrivate(), chainCode);
+    response = cmdSet.loadKey(KeycardApplet.LOAD_KEY_P2_SEED_BIP32, seed);
     assertEquals(0x9000, response.getSw());
   }
 
@@ -920,10 +923,7 @@ public class KeycardTest {
   @Test
   @DisplayName("FACTORY RESET command")
   @Capabilities("factoryReset")
-  void factoryResetTest() throws Exception {
-    KeyPairGenerator g = keypairGenerator();
-    KeyPair keyPair = g.generateKeyPair();
-    
+  void factoryResetTest() throws Exception {    
     // Invalid P1 P2
     APDUResponse response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_FACTORY_RESET, 0, 0, new byte[0]));
     assertEquals(0x6a86, response.getSw());
@@ -1388,6 +1388,34 @@ public class KeycardTest {
   }
 
   @Test
+  @DisplayName("LEE Keys")
+  void leeKeysTest() throws Exception {
+    byte[] seed = Mnemonic.toBinarySeed("fan empower output between game genius forest bulk party small arm shuffle", "");
+    byte[] expectedPublic = Hex.decode("0444e68023afcd735d4bca23a757a6d2e1b1cf4b55a58ed8fbf58ba1e311cd592ec0f289e5d81f529f9e71371ccd2b68974eac2b4206e2072bcce11859a262d6f3");
+    byte[] expectedNsk = Hex.decode("8d155fdf26755d676085f85e206366d86988d827c349192ee5d5817d87b7e280");
+    byte[] expectedVsk = Hex.decode("76d96b8825daf2bb7a9672d8711122ea22f8f8301964f6f23e640fac94465204");
+
+    cmdSet.autoOpenSecureChannel();
+    APDUResponse response = cmdSet.verifyPIN("000000");
+    assertEquals(0x9000, response.getSw());
+
+    response = cmdSet.loadKey(KeycardApplet.LOAD_KEY_P2_SEED_LEE, seed);
+    assertEquals(0x9000, response.getSw());
+
+    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
+    assertEquals(0x9000, response.getSw());
+    BIP32KeyPair pair = BIP32KeyPair.fromTLV(response.getData());
+    assertArrayEquals(expectedPublic, pair.getPublicKey());
+
+    response = cmdSet.exportLEE(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
+    assertEquals(0x9000, response.getSw());
+    TinyBERTLV tlvReader = new TinyBERTLV(response.getData());
+    tlvReader.enterConstructed(KeycardApplet.TLV_KEY_TEMPLATE);
+    assertArrayEquals(expectedNsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_NSK));
+    assertArrayEquals(expectedVsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK));
+  }
+
+  @Test
   @DisplayName("STORE/GET DATA")
   void storeGetDataTest() throws Exception {
     APDUResponse response;
@@ -1845,7 +1873,7 @@ public class KeycardTest {
     BigInteger s = new BigInteger(Arrays.copyOfRange(rawSig, sOff, sOff + sLen));
 
     Class<?> ecdsaSignature = Class.forName("org.web3j.crypto.Sign$ECDSASignature");
-    Constructor ecdsaSignatureConstructor = ecdsaSignature.getDeclaredConstructor(BigInteger.class, BigInteger.class);
+    Constructor<?> ecdsaSignatureConstructor = ecdsaSignature.getDeclaredConstructor(BigInteger.class, BigInteger.class);
     ecdsaSignatureConstructor.setAccessible(true);
     Object sig = ecdsaSignatureConstructor.newInstance(r, s);
     Method m = ecdsaSignature.getMethod("toCanonicalised");

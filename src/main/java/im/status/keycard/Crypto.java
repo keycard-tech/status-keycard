@@ -1,5 +1,6 @@
 package im.status.keycard;
 
+import im.status.keycard.math.BigNumberMath;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.*;
@@ -24,7 +25,39 @@ public class Crypto {
   final static private byte HMAC_OPAD = (byte) 0x5c;
   final static private short HMAC_BLOCK_SIZE = (short) 128;
 
-  final static private byte[] KEY_BITCOIN_SEED = {'B', 'i', 't', 'c', 'o', 'i', 'n', ' ', 's', 'e', 'e', 'd'};
+  final static byte[] KEY_BITCOIN_SEED = {'B', 'i', 't', 'c', 'o', 'i', 'n', ' ', 's', 'e', 'e', 'd'};
+  final static byte[] KEY_LEE_PUB_SEED = {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'u', 'b'};
+  final static byte[] KEY_LEE_PRIV_SEED =  {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'r', 'i', 'v'};
+  private final static byte[] LEE_SEED_PRIV = {'L', 'E', 'E', '_', 's', 'e', 'e', 'd', '_', 'p', 'r', 'i', 'v'};
+  private final static byte[] LEE_KEY = {'L', 'E','E', '/', 'k', 'e', 'y', 's'};
+
+  final static byte CONST_NSK = 0x01;
+  final static byte CONST_VSK = 0x02;
+  final static byte CONST_NPK = 0x07;
+
+  final static short SCRATCH_SIZE = (short) 176;
+
+  final static short BIP0340_CHALLENGE = (short) 0;
+  final static short BIP0340_AUX = MessageDigest.LENGTH_SHA_256;
+  final static short BIP0340_NONCE = (short) 2 * MessageDigest.LENGTH_SHA_256;
+
+  final static private byte[] TAGGED_PREFIXES = {
+      // BIP0340_CHALLENGE
+      (byte) 0x7b, (byte) 0xb5, (byte) 0x2d, (byte) 0x7a, (byte) 0x9f, (byte) 0xef, (byte) 0x58, (byte) 0x32,
+      (byte) 0x3e, (byte) 0xb1, (byte) 0xbf, (byte) 0x7a, (byte) 0x40, (byte) 0x7d, (byte) 0xb3, (byte) 0x82,
+      (byte) 0xd2, (byte) 0xf3, (byte) 0xf2, (byte) 0xd8, (byte) 0x1b, (byte) 0xb1, (byte) 0x22, (byte) 0x4f,
+      (byte) 0x49, (byte) 0xfe, (byte) 0x51, (byte) 0x8f, (byte) 0x6d, (byte) 0x48, (byte) 0xd3, (byte) 0x7c,
+      // BIP0340_AUX
+      (byte) 0xf1, (byte) 0xef, (byte) 0x4e, (byte) 0x5e, (byte) 0xc0, (byte) 0x63, (byte) 0xca, (byte) 0xda,
+      (byte) 0x6d, (byte) 0x94, (byte) 0xca, (byte) 0xfa, (byte) 0x9d, (byte) 0x98, (byte) 0x7e, (byte) 0xa0,
+      (byte) 0x69, (byte) 0x26, (byte) 0x58, (byte) 0x39, (byte) 0xec, (byte) 0xc1, (byte) 0x1f, (byte) 0x97,
+      (byte) 0x2d, (byte) 0x77, (byte) 0xa5, (byte) 0x2e, (byte) 0xd8, (byte) 0xc1, (byte) 0xcc, (byte) 0x90,
+      // BIP0340_NONCE
+      (byte) 0x07, (byte) 0x49, (byte) 0x77, (byte) 0x34, (byte) 0xa7, (byte) 0x9b, (byte) 0xcb, (byte) 0x35,
+      (byte) 0x5b, (byte) 0x9b, (byte) 0x8c, (byte) 0x7d, (byte) 0x03, (byte) 0x4f, (byte) 0x12, (byte) 0x1c,
+      (byte) 0xf4, (byte) 0x34, (byte) 0xd7, (byte) 0x3e, (byte) 0xf7, (byte) 0x2d, (byte) 0xda, (byte) 0x19,
+      (byte) 0x87, (byte) 0x00, (byte) 0x61, (byte) 0xfb, (byte) 0x52, (byte) 0xbf, (byte) 0xeb, (byte) 0x2f,
+  };
 
   // The below 5 objects can be accessed anywhere from the entire applet
   RandomData random;
@@ -32,6 +65,8 @@ public class Crypto {
   MessageDigest sha256;
   MessageDigest sha512;
   Cipher aesCbcIso9797m2;
+  Signature ecdsa;
+  byte[] scratch;
 
   private Signature hmacSHA512;
   private HMACKey hmacKey;
@@ -44,6 +79,8 @@ public class Crypto {
     ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
     sha512 = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
     aesCbcIso9797m2 = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M2,false);
+    ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
+    scratch = JCSystem.makeTransientByteArray(SCRATCH_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
     try {
       hmacSHA512 = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
@@ -87,7 +124,7 @@ public class Crypto {
       return false;
     }
 
-    addm256(output, outOff, data, dataOff, SECP256k1.SECP256K1_R, (short) 0, output, outOff);
+    BigNumberMath.modAdd(output, outOff, KEY_SECRET_SIZE, data, dataOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
 
     return !isZero256(output, outOff);
   }
@@ -101,8 +138,70 @@ public class Crypto {
    * @param masterKey the output buffer
    * @param keyOff the offset in the output buffer
    */
-  void bip32MasterFromSeed(byte[] seed, short seedOff, short seedSize, byte[] masterKey, short keyOff) {
-    hmacSHA512(KEY_BITCOIN_SEED, (short) 0, (short) KEY_BITCOIN_SEED.length, seed, seedOff, seedSize, masterKey, keyOff);
+  void bip32MasterFromSeed(byte[] key, byte[] seed, short seedOff, short seedSize, byte[] masterKey, short keyOff) {
+    hmacSHA512(key, (short) 0, (short) key.length, seed, seedOff, seedSize, masterKey, keyOff);
+  }
+
+  /**
+   * Derives either a nullifier or viewing key
+   * 
+   * @param type the type identifier of the key to derive, either CONST_NSK or CONST_VSK
+   * @param i i the buffer containing the key path element (a 32-bit big endian integer)
+   * @param iOff the offset in the buffer
+   * @param ssk the spending secret key
+   * @param sskOff the spending secret key offset
+   * @param output the output buffer
+   * @param outOff the output buffer offset
+   */
+  void leeDeriveFromSSK(byte type, byte[] i, short iOff, byte[] ssk, short sskOff, byte[] output, short outOff) {
+    sha256.update(LEE_KEY, (short) 0, (short) LEE_KEY.length);
+    sha256.update(ssk, sskOff, KEY_SECRET_SIZE);
+    output[outOff] = type;
+    sha256.update(output, outOff, (short) 1);
+    sha256.update(i, iOff, (short) 4);
+    sha256.doFinal(SECP256k1.SECP256K1_A, (short) 0, (short) 19, output, outOff);
+  }
+
+  /**
+   * Derives the public key from NSK
+   * @param nsk
+   * @param nskOff
+   * @param output
+   * @param outOff
+   */
+  void leeDerivePublicNSK(byte[] nsk, short nskOff, byte[] output, short outOff) {
+    sha256.update(LEE_KEY, (short) 0, (short) LEE_KEY.length);
+    sha256.update(nsk, nskOff, KEY_SECRET_SIZE);
+    output[outOff] = CONST_NPK;
+    sha256.update(output, outOff, (short) 1);
+    sha256.doFinal(SECP256k1.SECP256K1_A, (short) 0, (short) 23, output, outOff);
+  }
+
+  /**
+   * Derives child SSK, NSK, VSK and Chain. Derivation is done in place.
+   *
+   * @param i
+   * @param iOff
+   * @param nsk
+   * @param nskOff
+   * @param vsk
+   * @param vskOff
+   * @param chain
+   * @param chainOff
+   */
+  boolean leeDeriveChild(byte[] i, short iOff, byte[] nsk, short nskOff, byte[] vsk, short vskOff, byte[] chain, short chainOff) {
+    short off = Util.arrayCopyNonAtomic(LEE_SEED_PRIV, (short) 0, scratch, (short) 0, (short) LEE_SEED_PRIV.length);
+    BigNumberMath.modMul(nsk, nskOff, KEY_SECRET_SIZE, vsk, vskOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
+    off = Util.arrayCopyNonAtomic(nsk, nskOff, scratch, off, KEY_SECRET_SIZE);
+    off = Util.arrayCopyNonAtomic(i, iOff, scratch, off, (short) 4);
+    hmacSHA512(chain, chainOff, KEY_SECRET_SIZE, scratch, (short) 0, off, scratch, off);
+    
+    leeDeriveFromSSK(CONST_NSK, i, iOff, scratch, off, nsk, nskOff);
+    leeDeriveFromSSK(CONST_VSK, i, iOff, scratch, off, vsk, vskOff);
+
+    Util.arrayCopyNonAtomic(scratch, (short) (off + KEY_SECRET_SIZE), chain, chainOff, KEY_SECRET_SIZE);
+
+    return !isZero256(nsk, nskOff);
   }
 
   /**
@@ -170,22 +269,9 @@ public class Crypto {
     }
   }
 
-  /**
-   * Modulo addition of two 256-bit numbers.
-   *
-   * @param a the a operand
-   * @param aOff the offset of the a operand
-   * @param b the b operand
-   * @param bOff the offset of the b operand
-   * @param n the modulo
-   * @param nOff the offset of the modulo
-   * @param out the output buffer
-   * @param outOff the offset in the output buffer
-   */
-  private void addm256(byte[] a, short aOff, byte[] b, short bOff, byte[] n, short nOff, byte[] out, short outOff) {
-    if ((add256(a, aOff, b, bOff, out, outOff) != 0) || (ucmp256(out, outOff, n, nOff) > 0)) {
-      sub256(out, outOff, n, nOff, out, outOff);
-    }
+  void bip0340_init_sha256(short tag) {
+    sha256.update(TAGGED_PREFIXES, tag, MessageDigest.LENGTH_SHA_256);
+    sha256.update(TAGGED_PREFIXES, tag, MessageDigest.LENGTH_SHA_256);
   }
 
   /**
@@ -223,7 +309,7 @@ public class Crypto {
    * @param aOff the offset of the a operand
    * @return true if a is 0, false otherwise
    */
-  private boolean isZero256(byte[] a, short aOff) {
+   boolean isZero256(byte[] a, short aOff) {
     byte acc = 0;
 
     for (short i = 0; i < 32; i++) {
@@ -234,24 +320,20 @@ public class Crypto {
   }
 
   /**
-   * Addition of two 256-bit numbers.
+   * A = A xor B
    *
    * @param a the a operand
    * @param aOff the offset of the a operand
    * @param b the b operand
    * @param bOff the offset of the b operand
-   * @param out the output buffer
-   * @param outOff the offset in the output buffer
-   * @return the carry of the addition
    */
-  private short add256(byte[] a, short aOff,  byte[] b, short bOff, byte[] out, short outOff) {
-    short outI = 0;
-    for (short i = 31 ; i >= 0 ; i--) {
-      outI = (short) ((short)(a[(short)(aOff + i)] & 0xFF) + (short)(b[(short)(bOff + i)] & 0xFF) + outI);
-      out[(short)(outOff + i)] = (byte)outI ;
-      outI = (short)(outI >> 8);
+  void xor256(byte[] a, short aOff, byte[] b, short bOff) {
+    for (short i = 0 ; i < 32; i++) {
+      short l = (short)(a[(short)(aOff + i)] & 0x00ff);
+      short r = (short)(b[(short)(bOff + i)] & 0x00ff);
+
+      a[(short) (aOff + i)] = (byte)(l ^ r);
     }
-    return outI;
   }
 
   /**
