@@ -66,6 +66,7 @@ public class Crypto {
   MessageDigest sha512;
   Cipher aesCbcIso9797m2;
   Signature ecdsa;
+  BigNumberMath bigMath;
   byte[] scratch;
 
   private Signature hmacSHA512;
@@ -81,6 +82,7 @@ public class Crypto {
     aesCbcIso9797m2 = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M2,false);
     ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
     scratch = JCSystem.makeTransientByteArray(SCRATCH_SIZE, JCSystem.CLEAR_ON_DESELECT);
+    bigMath = new BigNumberMath();
 
     try {
       hmacSHA512 = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
@@ -124,7 +126,7 @@ public class Crypto {
       return false;
     }
 
-    BigNumberMath.modAdd(output, outOff, KEY_SECRET_SIZE, data, dataOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
+    bigMath.modAdd(output, outOff, KEY_SECRET_SIZE, data, dataOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
 
     return !isZero256(output, outOff);
   }
@@ -191,7 +193,7 @@ public class Crypto {
    */
   boolean leeDeriveChild(byte[] i, short iOff, byte[] nsk, short nskOff, byte[] vsk, short vskOff, byte[] chain, short chainOff) {
     short off = Util.arrayCopyNonAtomic(LEE_SEED_PRIV, (short) 0, scratch, (short) 0, (short) LEE_SEED_PRIV.length);
-    BigNumberMath.modMul(nsk, nskOff, KEY_SECRET_SIZE, vsk, vskOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
+    bigMath.modMul(nsk, nskOff, KEY_SECRET_SIZE, vsk, vskOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
     off = Util.arrayCopyNonAtomic(nsk, nskOff, scratch, off, KEY_SECRET_SIZE);
     off = Util.arrayCopyNonAtomic(i, iOff, scratch, off, (short) 4);
     hmacSHA512(chain, chainOff, KEY_SECRET_SIZE, scratch, (short) 0, off, scratch, off);

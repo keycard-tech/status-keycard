@@ -138,7 +138,7 @@ public class SECP256k1 {
     derivePublicKey(key, keyOff, crypto.scratch, SCHNORR_PUB_OFF);
     if ((crypto.scratch[(short)(SCHNORR_PUB_OFF + 64)] & (byte) 0x01) == (byte) 1) {
       Util.arrayFillNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), (short) 32, (byte) 0);
-      BigNumberMath.modSub(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), (short) 32, key, keyOff, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+      crypto.bigMath.modSub(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), (short) 32, key, keyOff, (short) 32, SECP256K1_R, (short) 0, (short) 32);
       Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 33), key, keyOff, (short) 32);
     }
   }
@@ -157,7 +157,7 @@ public class SECP256k1 {
       crypto.sha256.update(crypto.scratch, SCHNORR_K_OFF, (short) 32);
       crypto.sha256.update(out, outOff, (short) 32);
       crypto.sha256.doFinal(hash, hashOff, (short) 32, crypto.scratch, SCHNORR_K_OFF);
-      BigNumberMath.modRed(crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+      crypto.bigMath.modRed(crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
       if (!crypto.isZero256(crypto.scratch, SCHNORR_K_OFF)) {
         break;
       }
@@ -168,14 +168,14 @@ public class SECP256k1 {
     crypto.sha256.update(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), (short) 32);
     crypto.sha256.update(out, outOff, (short) 32);
     crypto.sha256.doFinal(hash, hashOff, (short) 32, out, (short) (outOff + SCHNORR_OUT_SIG_OFF));
-    BigNumberMath.modRed(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, SECP256K1_R, (short) 0, (short) 32);
+    crypto.bigMath.modRed(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, SECP256K1_R, (short) 0, (short) 32);
 
     out[outOff] = TLV_RAW_SIGNATURE;
     out[(short)(outOff + 1)] = (byte) 64;
     Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), out, (short) (outOff + 2), (short) 32);
 
-    BigNumberMath.modMul(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_SK_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
-    BigNumberMath.modAdd(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+    crypto.bigMath.modMul(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_SK_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
+    crypto.bigMath.modAdd(out, (short) (outOff + SCHNORR_OUT_SIG_OFF), (short) 32, crypto.scratch, SCHNORR_K_OFF, (short) 32, SECP256K1_R, (short) 0, (short) 32);
 
     return (short) 66;
   }
