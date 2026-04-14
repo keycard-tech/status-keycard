@@ -119,6 +119,7 @@ public class KeycardApplet extends Applet {
   static final byte CAPABILITY_CREDENTIALS_MANAGEMENT = (byte) 0x04;
   static final byte CAPABILITY_NDEF = (byte) 0x08;
   static final byte CAPABILITY_FACTORY_RESET = (byte) 0x10;
+  static final byte CAPABILITY_LEE = (byte) 0x20;
 
   static final byte APPLICATION_CAPABILITIES = (byte)(CAPABILITY_SECURE_CHANNEL | CAPABILITY_KEY_MANAGEMENT | CAPABILITY_CREDENTIALS_MANAGEMENT | CAPABILITY_NDEF | CAPABILITY_FACTORY_RESET);
 
@@ -470,7 +471,7 @@ public class KeycardApplet extends Applet {
 
     apduBuffer[off++] = TLV_CAPABILITIES;
     apduBuffer[off++] = 1;
-    apduBuffer[off++] = APPLICATION_CAPABILITIES;
+    apduBuffer[off++] = (byte) (APPLICATION_CAPABILITIES | (masterSsk.isInitialized() ? CAPABILITY_LEE : (byte) 0));
 
     apduBuffer[lenoff] = (byte)(off - lenoff - 1);
     apdu.setOutgoingAndSend((short) 0, off);
