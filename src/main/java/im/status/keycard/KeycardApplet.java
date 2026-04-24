@@ -7,7 +7,7 @@ import static javacard.framework.ISO7816.OFFSET_P1;
 import static javacard.framework.ISO7816.OFFSET_P2;
 
 /**
- * The applet's main class. All incoming commands a processed by this class.
+ * The applet's main class. All incoming commands are processed by this class.
  */
 public class KeycardApplet extends Applet {
   static final short APPLICATION_VERSION = (short) 0x0302;
@@ -29,6 +29,7 @@ public class KeycardApplet extends Applet {
   static final byte INS_EXPORT_LEE = (byte) 0xC3;
   static final byte INS_GET_DATA = (byte) 0xCA;
   static final byte INS_STORE_DATA = (byte) 0xE2;
+  static final byte INS_GET_CHALLENGE = (byte) 0x84;
 
   static final short SW_REFERENCED_DATA_NOT_FOUND = (short) 0x6A88;
 
@@ -45,6 +46,7 @@ public class KeycardApplet extends Applet {
   static final byte PAIRING_MAX_CLIENT_COUNT = 10;
   static final byte UID_LENGTH = 16;
   static final byte MAX_DATA_LENGTH = 127;
+  static final byte SW_LENGTH = 2;
 
   static final short CHAIN_CODE_SIZE = 32;
   static final short KEY_UID_LENGTH = 32;
@@ -307,7 +309,10 @@ public class KeycardApplet extends Applet {
           break;
         case INS_FACTORY_RESET:
           factoryReset(apdu);
-          return;          
+          return;         
+        case INS_GET_CHALLENGE:
+          getChallenge(apdu);
+          return;
         default:
           ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
           break;
@@ -391,6 +396,8 @@ public class KeycardApplet extends Applet {
       pin = mainPIN;
     } else if (apduBuffer[ISO7816.OFFSET_INS] == IdentApplet.INS_IDENTIFY_CARD) {
       IdentApplet.identifyCard(apdu, null, crypto.ecdsa);
+    } else if (apduBuffer[ISO7816.OFFSET_INS] == INS_GET_CHALLENGE) {
+      getChallenge(apdu);
     } else {
       ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
     }
@@ -1117,6 +1124,34 @@ public class KeycardApplet extends Applet {
 
     if (JCSystem.isObjectDeletionSupported()) {
       JCSystem.requestObjectDeletion();
+    }
+  }
+
+  private void getChallenge(APDU apdu) {
+    byte[] apduBuffer = apdu.getBuffer();
+    boolean scOpen = secureChannel.isOpen();
+
+    if (scOpen) {
+      secureChannel.preprocessAPDU(apduBuffer);
+    }
+
+    short len = (short)(apduBuffer[ISO7816.OFFSET_P1] & 0xFF);
+
+    if (len == 0) {
+      ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+    }
+
+    if (scOpen && (len > (SecureChannel.SC_MAX_PLAIN_LENGTH - SW_LENGTH))) {
+      ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+    }
+
+    short off = scOpen ? SecureChannel.SC_OUT_OFFSET : (short) 0;
+    crypto.random.generateData(apduBuffer, off, len);
+
+    if (scOpen) {
+      secureChannel.respond(apdu, len, ISO7816.SW_NO_ERROR);
+    } else {
+      apdu.setOutgoingAndSend(off, len);
     }
   }
 

@@ -77,6 +77,11 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
     return savedSecureChannel.transmit(savedCardChannel, exportLee);
   }
 
+  public APDUResponse getChallenge(int len) throws IOException {
+    APDUCommand getChallenge = savedSecureChannel.protectedCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, len, 0, new byte[0]);
+    return savedSecureChannel.transmit(savedCardChannel, getChallenge);
+  }
+
   /**
    * Sends a GET STATUS APDU to retrieve the APPLICATION STATUS template and reads the byte indicating key initialization
    * status
@@ -89,4 +94,3 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
     return new ApplicationStatus(resp.getData()).hasMasterKey();
   }
 }
-
