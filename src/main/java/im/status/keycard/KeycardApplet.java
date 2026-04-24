@@ -62,9 +62,7 @@ public class KeycardApplet extends Applet {
   static final byte LOAD_KEY_P1_EC = 0x01;
   static final byte LOAD_KEY_P1_EXT_EC = 0x02;
   static final byte LOAD_KEY_P1_SEED = 0x03;
-
-  static final byte LOAD_KEY_P2_SEED_BIP32 = 0x00;
-  static final byte LOAD_KEY_P2_SEED_LEE = 0x01;
+  static final byte LOAD_KEY_P1_LEE = 0x04;
 
   static final byte DERIVE_P1_SOURCE_MASTER = (byte) 0x00;
   static final byte DERIVE_P1_SOURCE_PARENT = (byte) 0x40;
@@ -124,6 +122,9 @@ public class KeycardApplet extends Applet {
   static final byte APPLICATION_CAPABILITIES = (byte)(CAPABILITY_SECURE_CHANNEL | CAPABILITY_KEY_MANAGEMENT | CAPABILITY_CREDENTIALS_MANAGEMENT | CAPABILITY_NDEF | CAPABILITY_FACTORY_RESET);
 
   static final byte[] EIP_1581_PREFIX = { (byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D};
+
+  private static final byte SEED_BIP32 = 0x00;
+  private static final byte SEED_LEE = 0x01;
 
   private OwnerPIN pin;
   private OwnerPIN mainPIN;
@@ -703,8 +704,11 @@ public class KeycardApplet extends Applet {
         loadKeyPair(apduBuffer);
         break;
       case LOAD_KEY_P1_SEED:
-        loadSeed(apduBuffer);
+        loadSeed(apduBuffer, SEED_BIP32);
         break;
+      case LOAD_KEY_P1_LEE:
+        loadSeed(apduBuffer, SEED_LEE);
+        break;        
       default:
         ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
         break;
@@ -799,7 +803,7 @@ public class KeycardApplet extends Applet {
    *
    * @param apduBuffer the APDU buffer
    */
-  private void loadSeed(byte[] apduBuffer) {
+  private void loadSeed(byte[] apduBuffer, byte seedType) {
     short seedLen = (short) apduBuffer[ISO7816.OFFSET_LC];
 
     if ((seedLen < BIP32_MIN_SEED_SIZE) || (seedLen > BIP32_MAX_SEED_SIZE)) {
@@ -809,11 +813,11 @@ public class KeycardApplet extends Applet {
     short outOff = (short) (ISO7816.OFFSET_CDATA + seedLen);
     short outOffLee = 0;
 
-    switch(apduBuffer[OFFSET_P2]) {
-      case LOAD_KEY_P2_SEED_BIP32:
+    switch(seedType) {
+      case SEED_BIP32:
         crypto.bip32MasterFromSeed(Crypto.KEY_BITCOIN_SEED, apduBuffer, (short) ISO7816.OFFSET_CDATA, seedLen, apduBuffer, outOff);
         break;
-      case LOAD_KEY_P2_SEED_LEE:
+      case SEED_LEE:
         outOffLee = (short) (outOff + (short)(CHAIN_CODE_SIZE * 2));
         crypto.bip32MasterFromSeed(Crypto.KEY_LEE_PUB_SEED, apduBuffer, (short) ISO7816.OFFSET_CDATA, seedLen, apduBuffer, outOff);
         crypto.bip32MasterFromSeed(Crypto.KEY_LEE_PRIV_SEED, apduBuffer, (short) ISO7816.OFFSET_CDATA, seedLen, apduBuffer, outOffLee);
@@ -1134,7 +1138,7 @@ public class KeycardApplet extends Applet {
     apduBuffer[ISO7816.OFFSET_LC] = BIP39_SEED_SIZE;
     crypto.random.generateData(apduBuffer, ISO7816.OFFSET_CDATA, BIP39_SEED_SIZE);
 
-    loadSeed(apduBuffer);
+    loadSeed(apduBuffer, SEED_BIP32);
     secureChannel.respond(apdu, KEY_UID_LENGTH, ISO7816.SW_NO_ERROR);
   }
 

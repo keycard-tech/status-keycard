@@ -1,6 +1,7 @@
 package im.status.keycard;
 
 import im.status.keycard.applet.ApplicationStatus;
+import im.status.keycard.applet.KeyPath;
 import im.status.keycard.applet.KeycardCommandSet;
 import im.status.keycard.io.APDUCommand;
 import im.status.keycard.io.APDUResponse;
@@ -8,6 +9,7 @@ import im.status.keycard.io.CardChannel;
 import org.web3j.crypto.ECKeyPair;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 public class TestKeycardCommandSet extends KeycardCommandSet {
   private TestSecureChannelSession savedSecureChannel;
@@ -52,9 +54,22 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
     return loadKey(ansiPublic, privateKey, null);
   }
 
-  public APDUResponse loadKey(byte seedType, byte[] seed) throws IOException {
-    APDUCommand loadKey = savedSecureChannel.protectedCommand(0x80, KeycardApplet.INS_LOAD_KEY, LOAD_KEY_P1_SEED, seedType, seed);
+  public APDUResponse loadLEE(byte[] seed) throws IOException {
+    APDUCommand loadKey = savedSecureChannel.protectedCommand(0x80, KeycardApplet.INS_LOAD_KEY, KeycardApplet.LOAD_KEY_P1_LEE, 0, seed);
     return savedSecureChannel.transmit(savedCardChannel, loadKey);
+  }
+
+  public APDUResponse signSchnorr(byte[] hash, String path) throws IOException {
+    KeyPath keyPath = new KeyPath(path);
+    byte[] pathData = keyPath.getData();
+    byte[] data = Arrays.copyOf(hash, hash.length + pathData.length);
+    System.arraycopy(pathData, 0, data, hash.length, pathData.length);
+    return signWithAlgo(data, keyPath.getSource() | 1, 3);
+  }
+
+  public APDUResponse signWithAlgo(byte[] data, int p1, int p2) throws IOException {
+    APDUCommand sign = savedSecureChannel.protectedCommand(0x80, KeycardApplet.INS_SIGN, p1, p2, data);
+    return savedSecureChannel.transmit(savedCardChannel, sign);
   }
 
   public APDUResponse exportLEE(byte[] path, byte source) throws IOException {

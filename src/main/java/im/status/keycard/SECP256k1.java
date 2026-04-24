@@ -61,7 +61,7 @@ public class SECP256k1 {
   static final byte SIGN_BLS12_381 = 0x02;
   static final byte SIGN_BIP340_SCHNORR = 0x03;
 
-  static final byte TLV_RAW_SIGNATURE = (byte) 0x80;
+  static final byte TLV_RAW_SIGNATURE = (byte) 0x88;
 
   private KeyAgreement ecPointMultiplier;
   ECPrivateKey tmpECPrivateKey;

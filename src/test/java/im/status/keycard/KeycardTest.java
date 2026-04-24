@@ -819,7 +819,7 @@ public class KeycardTest {
     new Random().nextBytes(seed);
 
     // Check seed load
-    response = cmdSet.loadKey(KeycardApplet.LOAD_KEY_P2_SEED_BIP32, seed);
+    response = cmdSet.loadKey(seed);
     assertEquals(0x9000, response.getSw());
   }
 
@@ -1122,6 +1122,10 @@ public class KeycardTest {
     verifySignResp(data, response);
     assertEquals(updatedPath, new KeyPath(cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH).checkOK().getData()).toString());
 
+    // Sign Schnorr
+    response = cmdSet.signSchnorr(hash, updatedPath);
+    verifySchnorrSignResp(data, response);
+
     // Sign with PINless
     String pinlessPath = currentPath + "/3";
     response = cmdSet.setPinlessPath(pinlessPath);
@@ -1159,6 +1163,19 @@ public class KeycardTest {
     
     response = cmdSet.signWithPath(hash, updatedPath, false);
     verifySignResp(data, response);
+  }
+
+  private void verifySchnorrSignResp(byte[] data, APDUResponse response) throws Exception {
+    assertEquals(0x9000, response.getSw());
+    byte[] sig = response.getData();
+    byte[] keyData = extractPublicKeyFromSignature(sig);
+    sig = extractSignature(sig);
+
+    assertEquals(65, keyData.length);
+    assertEquals((byte) 4, keyData[0]);
+    assertEquals(66, sig.length);
+    assertEquals((byte) 0x88, sig[0]);
+    assertEquals((byte) 64, sig[1]);
   }
 
   private void verifySignResp(byte[] data, APDUResponse response) throws Exception {
@@ -1399,7 +1416,7 @@ public class KeycardTest {
     APDUResponse response = cmdSet.verifyPIN("000000");
     assertEquals(0x9000, response.getSw());
 
-    response = cmdSet.loadKey(KeycardApplet.LOAD_KEY_P2_SEED_LEE, seed);
+    response = cmdSet.loadLEE(seed);
     assertEquals(0x9000, response.getSw());
 
     response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
