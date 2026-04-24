@@ -5,7 +5,8 @@ repositories {
 }
 
 dependencies {
-  compile 'com.github.status-im.status-keycard-java:desktop:3.1.5'
+  compile 'com.github.status-im.status-keycard-java:desktop:e898afd'
   compile 'com.github.martinpaljak:apdu4j-pcsc:25.03.11'
   implementation 'com.github.martinpaljak:apdu4j-jnasmartcardio:25.03.11'
+  implementation 'org.bouncycastle:bcprov-jdk15on:1.65'
 }

@@ -1,9 +1,9 @@
 package im.status.keycard.build;
 
 import im.status.keycard.desktop.PCSCCardChannel;
-import im.status.keycard.globalplatform.GlobalPlatformCommandSet;
 import im.status.keycard.globalplatform.LoadCallback;
 import im.status.keycard.io.APDUException;
+import org.bouncycastle.util.encoders.Hex;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.logging.Logger;
@@ -49,7 +49,7 @@ public class InstallTask extends DefaultTask {
 
     logger.info("Connected to " + cardTerminal.getName());
     PCSCCardChannel sdkChannel = new PCSCCardChannel(apduCard.getBasicChannel());
-    GlobalPlatformCommandSet cmdSet = new GlobalPlatformCommandSet(sdkChannel);
+    TestGlobalPlatformCommandSet cmdSet = new TestGlobalPlatformCommandSet(sdkChannel);
 
     try {
       logger.info("Selecting the ISD");
@@ -58,7 +58,14 @@ public class InstallTask extends DefaultTask {
       cmdSet.openSecureChannel(false);
       logger.info("Deleting the old instances and package (if present)");
       cmdSet.deleteKeycardInstancesAndPackage();
-      logger.info("Loading the new package");
+      logger.info("Loading the math package");
+      byte[] mathPackageAid = Hex.decode("A0000008040002");
+      try {
+        cmdSet.loadPackage(mathPackageAid, new FileInputStream(this.getProject().file("keycard-math/im/status/keycard/math/javacard/math.cap")));
+      } catch(APDUException e) {
+        logger.info("Math package already loaded");
+      }
+      logger.info("Loading the keycard package");
       cmdSet.loadKeycardPackage(new FileInputStream(this.getProject().file("build/javacard/im/status/keycard/javacard/keycard.cap")), new LoadCallback() {
         @Override
         public void blockLoaded(int loadedBlock, int blockCount) {
