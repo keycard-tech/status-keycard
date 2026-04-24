@@ -1123,8 +1123,11 @@ public class KeycardTest {
     assertEquals(updatedPath, new KeyPath(cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH).checkOK().getData()).toString());
 
     // Sign Schnorr
-    response = cmdSet.signSchnorr(hash, updatedPath);
-    verifySchnorrSignResp(data, response);
+    if (TARGET != TARGET_SIMULATOR) {
+      response = cmdSet.signSchnorr(hash, updatedPath);
+      verifySchnorrSignResp(data, response);
+    }
+
 
     // Sign with PINless
     String pinlessPath = currentPath + "/3";
@@ -1424,12 +1427,14 @@ public class KeycardTest {
     BIP32KeyPair pair = BIP32KeyPair.fromTLV(response.getData());
     assertArrayEquals(expectedPublic, pair.getPublicKey());
 
-    response = cmdSet.exportLEE(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    TinyBERTLV tlvReader = new TinyBERTLV(response.getData());
-    tlvReader.enterConstructed(KeycardApplet.TLV_KEY_TEMPLATE);
-    assertArrayEquals(expectedNsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_NSK));
-    assertArrayEquals(expectedVsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK));
+    if (TARGET != TARGET_SIMULATOR) {
+      response = cmdSet.exportLEE(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
+      assertEquals(0x9000, response.getSw());
+      TinyBERTLV tlvReader = new TinyBERTLV(response.getData());
+      tlvReader.enterConstructed(KeycardApplet.TLV_KEY_TEMPLATE);
+      assertArrayEquals(expectedNsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_NSK));
+      assertArrayEquals(expectedVsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK));      
+    }
   }
 
   @Test
