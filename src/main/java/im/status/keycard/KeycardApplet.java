@@ -7,7 +7,7 @@ import static javacard.framework.ISO7816.OFFSET_P1;
 import static javacard.framework.ISO7816.OFFSET_P2;
 
 /**
- * The applet's main class. All incoming commands a processed by this class.
+ * The applet's main class. All incoming commands are processed by this class.
  */
 public class KeycardApplet extends Applet {
   static final short APPLICATION_VERSION = (short) 0x0302;
@@ -46,6 +46,7 @@ public class KeycardApplet extends Applet {
   static final byte PAIRING_MAX_CLIENT_COUNT = 10;
   static final byte UID_LENGTH = 16;
   static final byte MAX_DATA_LENGTH = 127;
+  static final byte SW_LENGTH = 2;
 
   static final short CHAIN_CODE_SIZE = 32;
   static final short KEY_UID_LENGTH = 32;
@@ -1128,14 +1129,30 @@ public class KeycardApplet extends Applet {
 
   private void getChallenge(APDU apdu) {
     byte[] apduBuffer = apdu.getBuffer();
+    boolean scOpen = secureChannel.isOpen();
+
+    if (scOpen) {
+      secureChannel.preprocessAPDU(apduBuffer);
+    }
+
     short len = (short)(apduBuffer[ISO7816.OFFSET_P1] & 0xFF);
 
     if (len == 0) {
       ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
     }
 
-    crypto.random.generateData(apduBuffer, (short) 0, len);
-    apdu.setOutgoingAndSend((short) 0, len);
+    if (scOpen && (len > (SecureChannel.SC_MAX_PLAIN_LENGTH - SW_LENGTH))) {
+      ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+    }
+
+    short off = scOpen ? SecureChannel.SC_OUT_OFFSET : (short) 0;
+    crypto.random.generateData(apduBuffer, off, len);
+
+    if (scOpen) {
+      secureChannel.respond(apdu, len, ISO7816.SW_NO_ERROR);
+    } else {
+      apdu.setOutgoingAndSend(off, len);
+    }
   }
 
   /**

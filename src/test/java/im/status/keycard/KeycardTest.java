@@ -958,8 +958,8 @@ public class KeycardTest {
   }
 
   @Test
-  @DisplayName("GET CHALLENGE command")
-  void getChallengeTest() throws Exception {
+  @DisplayName("GET CHALLENGE command without secure channel")
+  void getChallengeWithoutSecureChannelTest() throws Exception {
     // P1=0 is invalid
     APDUResponse response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 0, 0, new byte[0]));
     assertEquals(0x6A86, response.getSw());
@@ -976,6 +976,52 @@ public class KeycardTest {
     response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 255, 0, new byte[0]));
     assertEquals(0x9000, response.getSw());
     assertEquals(255, response.getData().length);
+  }
+
+  @Test
+  @DisplayName("GET CHALLENGE command before initialization")
+  @Capabilities("factoryReset")
+  void getChallengeBeforeInitializationTest() throws Exception {
+    APDUResponse response = cmdSet.factoryReset();
+    assertEquals(0x9000, response.getSw());
+
+    response = cmdSet.select();
+    assertEquals(0x9000, response.getSw());
+    assertFalse(cmdSet.getApplicationInfo().isInitializedCard());
+
+    response = sdkChannel.send(new APDUCommand(0x80, KeycardApplet.INS_GET_CHALLENGE, 16, 0, new byte[0]));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(16, response.getData().length);
+
+    initCard(cmdSet);
+    cmdSet.autoPair(sharedSecret);
+  }
+
+  @Test
+  @DisplayName("GET CHALLENGE command with open secure channel")
+  @Capabilities("secureChannel")
+  void getChallengeWithSecureChannelTest() throws Exception {
+    cmdSet.autoOpenSecureChannel();
+
+    APDUResponse response = cmdSet.getChallenge(16);
+    assertEquals(0x9000, response.getSw());
+    assertEquals(16, response.getData().length);
+
+    response = cmdSet.getChallenge(32);
+    assertEquals(0x9000, response.getSw());
+    assertEquals(32, response.getData().length);
+
+    int maxSecureChannelChallengeLength = SecureChannel.SC_MAX_PLAIN_LENGTH - KeycardApplet.SW_LENGTH;
+
+    response = cmdSet.getChallenge(maxSecureChannelChallengeLength);
+    assertEquals(0x9000, response.getSw());
+    assertEquals(maxSecureChannelChallengeLength, response.getData().length);
+
+    response = cmdSet.getChallenge(maxSecureChannelChallengeLength + 1);
+    assertEquals(0x6A86, response.getSw());
+
+    response = cmdSet.getChallenge(255);
+    assertEquals(0x6A86, response.getSw());
   }
 
   @Test
