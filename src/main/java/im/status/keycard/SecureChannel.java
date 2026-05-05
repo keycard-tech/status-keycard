@@ -428,6 +428,20 @@ public class SecureChannel {
   }
 
   /**
+   * Returns a bitmask of occupied pairing slots. Bit N is set if slot N is occupied.
+   */
+  public short getOccupiedPairingSlots() {
+    short mask = 0;
+    short slot = 0;
+
+    for (short i = 0; i < (short) pairingKeys.length; i += PAIRING_KEY_LENGTH) {
+      mask |= (short)(pairingKeys[i] << slot++);
+    }
+
+    return mask;
+  }
+
+  /**
    * Resets the Secure Channel, invalidating the current session. If no session is opened, this does nothing.
    */
   public void reset() {
