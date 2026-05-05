@@ -113,6 +113,7 @@ public class KeycardApplet extends Applet {
   static final byte TLV_UID = (byte) 0x8F;
   static final byte TLV_KEY_UID = (byte) 0x8E;
   static final byte TLV_CAPABILITIES = (byte) 0x8D;
+  static final byte TLV_PAIRING_SLOTS = (byte) 0x8C;
 
   static final byte CAPABILITY_SECURE_CHANNEL = (byte) 0x01;
   static final byte CAPABILITY_KEY_MANAGEMENT = (byte) 0x02;
@@ -480,6 +481,10 @@ public class KeycardApplet extends Applet {
     apduBuffer[off++] = TLV_CAPABILITIES;
     apduBuffer[off++] = 1;
     apduBuffer[off++] = (byte) (APPLICATION_CAPABILITIES | (masterSsk.isInitialized() ? CAPABILITY_LEE : (byte) 0));
+    apduBuffer[off++] = TLV_PAIRING_SLOTS;
+    apduBuffer[off++] = 2;
+    Util.setShort(apduBuffer, off, secureChannel.getOccupiedPairingSlots());
+    off += 2;
 
     apduBuffer[lenoff] = (byte)(off - lenoff - 1);
     apdu.setOutgoingAndSend((short) 0, off);

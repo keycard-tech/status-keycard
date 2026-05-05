@@ -479,6 +479,52 @@ public class KeycardTest {
   }
 
   @Test
+  @DisplayName("Pairing slots bitmask in SELECT response")
+  @Capabilities("secureChannel")
+  void pairingSlotsBitmaskTest() throws Exception {
+    Pairing originalPairing = cmdSet.getPairing();
+
+    int initialMask = parsePairingSlotsMask(cmdSet.select().getData());
+    assertTrue((initialMask & (1 << (originalPairing.getPairingIndex() & 0xFF))) != 0);
+
+    // Pair a second slot and verify bitmask grows
+    cmdSet.autoPair(sharedSecret);
+    byte secondIndex = secureChannel.getPairingIndex();
+
+    int twoSlotMask = parsePairingSlotsMask(cmdSet.select().getData());
+    assertTrue((twoSlotMask & (1 << (originalPairing.getPairingIndex() & 0xFF))) != 0);
+    assertTrue((twoSlotMask & (1 << secondIndex)) != 0);
+
+    // Unpair second slot and verify bitmask shrinks
+    cmdSet.autoOpenSecureChannel();
+
+    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
+      APDUResponse response = cmdSet.verifyPIN("000000");
+      assertEquals(0x9000, response.getSw());
+    }
+
+    APDUResponse response = cmdSet.unpair(secondIndex);
+    assertEquals(0x9000, response.getSw());
+
+    int afterUnpairMask = parsePairingSlotsMask(cmdSet.select().getData());
+    assertTrue((afterUnpairMask & (1 << (originalPairing.getPairingIndex() & 0xFF))) != 0);
+    assertEquals(0, afterUnpairMask & (1 << secondIndex));
+
+    // Restore original pairing so tearDown can open secure channel
+    cmdSet.setPairing(originalPairing);
+  }
+
+  private int parsePairingSlotsMask(byte[] selectData) {
+    // TLV_PAIRING_SLOTS (0x8C) tag, find it by scanning after the template header
+    for (int i = 0; i < selectData.length - 2; i++) {
+      if ((selectData[i] & 0xFF) == (KeycardApplet.TLV_PAIRING_SLOTS & 0xFF) && (selectData[i + 1] & 0xFF) == 2) {
+        return ((selectData[i + 2] & 0xFF) << 8) | (selectData[i + 3] & 0xFF);
+      }
+    }
+    throw new IllegalArgumentException("TLV_PAIRING_SLOTS not found in SELECT response");
+  }
+
+  @Test
   @DisplayName("GET STATUS command")
   void getStatusTest() throws Exception {
     APDUResponse response;
