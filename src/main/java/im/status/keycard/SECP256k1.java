@@ -71,8 +71,7 @@ public class SECP256k1 {
    */
   SECP256k1() {
     this.ecPointMultiplier = KeyAgreement.getInstance(ALG_EC_SVDP_DH_PLAIN_XY, false);
-    this.tmpECPrivateKey = (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, SECP256K1_KEY_SIZE, false);
-    setCurveParameters(tmpECPrivateKey);
+    this.tmpECPrivateKey = (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, SECP256K1_KEY_SIZE, false);
   }
 
   /**
@@ -87,6 +86,10 @@ public class SECP256k1 {
     key.setG(SECP256K1_G, (short) 0x00, (short) SECP256K1_G.length);
     key.setR(SECP256K1_R, (short) 0x00, (short) SECP256K1_R.length);
     key.setK(SECP256K1_K);
+  }
+
+  void onSelect() {
+    setCurveParameters(this.tmpECPrivateKey);
   }
 
   /**

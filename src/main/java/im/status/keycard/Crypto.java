@@ -16,14 +16,16 @@ public class Crypto {
   final static short KEY_SECRET_SIZE = 32;
   final static short KEY_PUB_SIZE = 65;
   final static short KEY_DERIVATION_SCRATCH_SIZE = 37;
-  final static private short HMAC_OUT_SIZE = 64;
+  final static private short HMAC_OUT_SIZE_512 = MessageDigest.LENGTH_SHA_512;
+  final static private short HMAC_OUT_SIZE_256 = MessageDigest.LENGTH_SHA_256;
 
   final static private byte[] MAX_S = { (byte) 0x7F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0x5D, (byte) 0x57, (byte) 0x6E, (byte) 0x73, (byte) 0x57, (byte) 0xA4, (byte) 0x50, (byte) 0x1D, (byte) 0xDF, (byte) 0xE9, (byte) 0x2F, (byte) 0x46, (byte) 0x68, (byte) 0x1B, (byte) 0x20, (byte) 0xA0 };
   final static private byte[] S_SUB = { (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFE, (byte) 0xBA, (byte) 0xAE, (byte) 0xDC, (byte) 0xE6, (byte) 0xAF, (byte) 0x48, (byte) 0xA0, (byte) 0x3B, (byte) 0xBF, (byte) 0xD2, (byte) 0x5E, (byte) 0x8C, (byte) 0xD0, (byte) 0x36, (byte) 0x41, (byte) 0x41 };
 
   final static private byte HMAC_IPAD = (byte) 0x36;
   final static private byte HMAC_OPAD = (byte) 0x5c;
-  final static private short HMAC_BLOCK_SIZE = (short) 128;
+  final static private short HMAC_BLOCK_SIZE_512 = (short) 128;
+  final static private short HMAC_BLOCK_SIZE_256 = (short) 64;
 
   final static byte[] KEY_BITCOIN_SEED = {'B', 'i', 't', 'c', 'o', 'i', 'n', ' ', 's', 'e', 'e', 'd'};
   final static byte[] KEY_LEE_PUB_SEED = {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'u', 'b'};
@@ -59,17 +61,26 @@ public class Crypto {
       (byte) 0x87, (byte) 0x00, (byte) 0x61, (byte) 0xfb, (byte) 0x52, (byte) 0xbf, (byte) 0xeb, (byte) 0x2f,
   };
 
+  final static private byte CCM_FLAGS_T8_Q2 = (byte) 0x19;
+  final static private byte CTR_FLAGS_Q2 = (byte) 0x01;
+  final static private short CCM_TAG_TMP_OFF = (short) 64;
+  final static short CCM_NONCE_SIZE = 13;
+  final static short CCM_TAG_SIZE = 8;
+
   // The below 5 objects can be accessed anywhere from the entire applet
   RandomData random;
   KeyAgreement ecdh;
   MessageDigest sha256;
   MessageDigest sha512;
-  Cipher aesCbcIso9797m2;
+  Cipher aesEcb;
+  Signature aesCbcMac;
+
   Signature ecdsa;
   BigNumberMath bigMath;
   byte[] scratch;
 
   private Signature hmacSHA512;
+  private Signature hmacSHA256;
   private HMACKey hmacKey;
 
   private byte[] hmacBlock;
@@ -79,20 +90,152 @@ public class Crypto {
     sha256 = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
     ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
     sha512 = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
-    aesCbcIso9797m2 = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M2,false);
+    aesEcb = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
+    aesCbcMac = Signature.getInstance(Signature.ALG_AES_MAC_128_NOPAD, false);
     ecdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
     scratch = JCSystem.makeTransientByteArray(SCRATCH_SIZE, JCSystem.CLEAR_ON_DESELECT);
     bigMath = new BigNumberMath();
 
     try {
       hmacSHA512 = Signature.getInstance(Signature.ALG_HMAC_SHA_512, false);
+      hmacSHA256 = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
       hmacKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_256, false);
     } catch (CryptoException e) {
       hmacSHA512 = null;
-      hmacBlock = JCSystem.makeTransientByteArray(HMAC_BLOCK_SIZE, JCSystem.CLEAR_ON_RESET);
+      hmacSHA256 = null;
+      hmacBlock = JCSystem.makeTransientByteArray(HMAC_BLOCK_SIZE_512, JCSystem.CLEAR_ON_RESET);
     }
 
   }
+
+
+  /**
+   * Computes the AES-CCM authentication tag via CBC-MAC.
+   *
+   * @param nonce the nonce (13 bytes)
+   * @param nonceOff the offset of the nonce
+   * @param data the data to authenticate
+   * @param dataOff the offset of the data
+   * @param dataLen the length of the data
+   */
+  private void aesCcmComputeMac(AESKey aesKey, byte[] nonce, short nonceOff, byte[] data, short dataOff, short dataLen) {
+    // Build formatted block: flags | nonce | EncLen (2 bytes big-endian)
+    scratch[0] = CCM_FLAGS_T8_Q2;
+    Util.arrayCopyNonAtomic(nonce, nonceOff, scratch, (short) 1, CCM_NONCE_SIZE);
+    scratch[(short) 14] = (byte) ((dataLen >> 8) & 0xFF);
+    scratch[(short) 15] = (byte) (dataLen & 0xFF);
+
+    aesCbcMac.init(aesKey, Signature.MODE_SIGN);
+
+    if (dataLen == 0) {
+      aesCbcMac.sign(scratch, (short) 0, AES_BLOCK_SIZE, scratch, CCM_TAG_TMP_OFF);
+    } else {
+      aesCbcMac.update(scratch, (short) 0, AES_BLOCK_SIZE);
+
+      short completeBytes = (short) ((dataLen / AES_BLOCK_SIZE) * AES_BLOCK_SIZE);
+      short remaining = (short) (dataLen - completeBytes);
+
+      aesCbcMac.update(data, dataOff, completeBytes);
+      
+      if (remaining > 0) {
+        Util.arrayCopyNonAtomic(data, (short) (dataOff + completeBytes), scratch, (short) 0, remaining);
+        Util.arrayFillNonAtomic(scratch, remaining, (short) (AES_BLOCK_SIZE - remaining), (byte) 0);
+        aesCbcMac.sign(scratch, (short) 0, AES_BLOCK_SIZE, scratch, CCM_TAG_TMP_OFF);
+      } else {
+        aesCbcMac.sign(scratch, (short) 0, (short) 0, scratch, CCM_TAG_TMP_OFF);        
+      }
+    }
+  }
+
+  /**
+   * AES-CCM counter-mode encryption/decryption (XOR with keystream).
+   *
+   * @param nonce the nonce (13 bytes)
+   * @param nonceOff the offset of the nonce
+   * @param input the input data (plaintext for encryption, ciphertext for decryption)
+   * @param inOff the offset of the input
+   * @param inLen the length of the input
+   * @param output the output buffer
+   * @param outOff the offset in the output buffer
+   * @param tag the tag buffer
+   * @param tagOff the outputBuffer
+   */
+  private void aesCcmCtrCrypt(AESKey aesKey, byte[] nonce, short nonceOff, byte[] input, short inOff, short inLen, byte[] output, short outOff, byte[] tag, short tagOff) {
+    aesEcb.init(aesKey, Cipher.MODE_ENCRYPT);
+
+    // Build the base counter block: flags | nonce | 00 00
+    scratch[0] = CTR_FLAGS_Q2;
+    Util.arrayCopyNonAtomic(nonce, nonceOff, scratch, (short) 1, CCM_NONCE_SIZE);
+    scratch[(short) 14] = 0;
+    scratch[(short) 15] = 0;
+
+    aesEcb.doFinal(scratch, (short) 0, AES_BLOCK_SIZE, scratch, AES_BLOCK_SIZE);
+    for (short i = 0; i < CCM_TAG_SIZE; i++) {
+      tag[(short) (tagOff + i)] = (byte) (tag[(short) (tagOff + i)] ^ scratch[(short) (i + AES_BLOCK_SIZE)]);
+    }
+
+    short numBlocks = (short) ((short) (inLen + (short) (AES_BLOCK_SIZE - 1)) / (short) AES_BLOCK_SIZE);
+    for (short i = 1; i <= numBlocks; i++) {
+      scratch[(short) 14] = (byte) ((i >> 8) & 0xFF);
+      scratch[(short) 15] = (byte) (i & 0xFF);
+
+      aesEcb.doFinal(scratch, (short) 0, AES_BLOCK_SIZE, scratch, AES_BLOCK_SIZE);
+
+      short blockStart = (short) ((i - 1) * AES_BLOCK_SIZE);
+      short blockLen = (short) (i == numBlocks ? inLen - blockStart : AES_BLOCK_SIZE);
+
+      for (short j = 0; j < blockLen; j++) {
+        output[(short) (outOff + blockStart + j)] = (byte) (input[(short) (inOff + blockStart + j)] ^ scratch[(short) (j + AES_BLOCK_SIZE)]);
+      }
+    }
+  }
+
+  /**
+   * AES-CCM generation-encryption (encrypt and authenticate).
+   *
+   * @param aesKey the AES-128 key
+   * @param nonce the nonce (13 bytes)
+   * @param nonceOff the offset of the nonce
+   * @param plaintext the plaintext
+   * @param ptOff the offset of the plaintext
+   * @param ptLen the length of the plaintext
+   * @param out the output buffer for ciphertext
+   * @param outOff the offset in the ciphertext buffer
+   */
+  void aesCcmEncrypt(AESKey aesKey, byte[] nonce, short nonceOff, byte[] plaintext, short ptOff, short ptLen, byte[] out, short outOff) {
+    short tagOff = (short) (outOff + ptLen);
+    aesCcmComputeMac(aesKey, nonce, nonceOff, plaintext, ptOff, ptLen);
+    aesCcmCtrCrypt(aesKey, nonce, nonceOff, plaintext, ptOff, ptLen, out, outOff, scratch, CCM_TAG_TMP_OFF);
+    Util.arrayCopyNonAtomic(scratch, CCM_TAG_TMP_OFF, out, tagOff, CCM_TAG_SIZE);
+  }
+
+  /**
+   * AES-CCM decryption-verification (decrypt and authenticate).
+   *
+   * @param aesKey the AES-128 key
+   * @param nonce the nonce (13 bytes)
+   * @param nonceOff the offset of the nonce
+   * @param input the ciphertext || tag
+   * @param inOff the offset of the ciphertext
+   * @param inLen the length of the ciphertext
+   * @param plaintext the output buffer for the plaintext
+   * @param ptOff the offset in the plaintext buffer
+   * @return true if authentication succeeded, false otherwise
+   */
+  boolean aesCcmDecrypt(AESKey aesKey, byte[] nonce, short nonceOff, byte[] input, short inOff, short inLen, byte[] plaintext, short ptOff) {
+    short ctLen = (short) (inLen - CCM_TAG_SIZE);
+    short tagOff = (short) (inOff + ctLen);
+
+    aesCcmCtrCrypt(aesKey, nonce, nonceOff, input, inOff, ctLen, plaintext, ptOff, input, tagOff);
+    aesCcmComputeMac(aesKey, nonce, nonceOff, plaintext, ptOff, ctLen);
+
+    byte diff = 0;
+    for (short i = 0; i < CCM_TAG_SIZE; i++) {
+      diff |= (byte) (scratch[(short) (CCM_TAG_TMP_OFF + i)] ^ input[(short) (tagOff + i)]);
+    }
+
+    return diff == 0;
+  }  
 
   boolean bip32IsHardened(byte[] i, short iOff) {
     return (i[iOff] & (byte) 0x80) == (byte) 0x80;
@@ -254,21 +397,84 @@ public class Crypto {
       hmacSHA512.sign(in, inOff, inLen, out, outOff);
     } else {
       for (byte i = 0; i < 2; i++) {
-        Util.arrayFillNonAtomic(hmacBlock, (short) 0, HMAC_BLOCK_SIZE, (i == 0 ? HMAC_IPAD : HMAC_OPAD));
+        Util.arrayFillNonAtomic(hmacBlock, (short) 0, HMAC_BLOCK_SIZE_512, (i == 0 ? HMAC_IPAD : HMAC_OPAD));
 
         for (short j = 0; j < keyLen; j++) {
           hmacBlock[j] ^= key[(short)(keyOff + j)];
         }
 
-        sha512.update(hmacBlock, (short) 0, HMAC_BLOCK_SIZE);
+        sha512.update(hmacBlock, (short) 0, HMAC_BLOCK_SIZE_512);
 
         if (i == 0) {
           sha512.doFinal(in, inOff, inLen, out, outOff);
         } else {
-          sha512.doFinal(out, outOff, HMAC_OUT_SIZE, out, outOff);
+          sha512.doFinal(out, outOff, HMAC_OUT_SIZE_512, out, outOff);
         }
       }
     }
+  }
+
+  /**
+   * Calculates the HMAC-SHA256 with the given key and data. Uses a software implementation which only requires SHA-256
+   * to be supported on cards which do not have native HMAC-SHA256.
+   *
+   * @param key the HMAC key
+   * @param keyOff the offset of the key
+   * @param keyLen the length of the key
+   * @param in the input data
+   * @param inOff the offset of the input data
+   * @param inLen the length of the input data
+   * @param out the output buffer
+   * @param outOff the offset in the output buffer
+   */
+  void hmacSHA256(byte[] key, short keyOff, short keyLen, byte[] in, short inOff, short inLen, byte[] out, short outOff) {
+    if (hmacSHA256 != null) {
+      hmacKey.setKey(key, keyOff, keyLen);
+      hmacSHA256.init(hmacKey, Signature.MODE_SIGN);
+      hmacSHA256.sign(in, inOff, inLen, out, outOff);
+    } else {
+      for (byte i = 0; i < 2; i++) {
+        Util.arrayFillNonAtomic(hmacBlock, (short) 0, HMAC_BLOCK_SIZE_256, (i == 0 ? HMAC_IPAD : HMAC_OPAD));
+
+        for (short j = 0; j < keyLen; j++) {
+          hmacBlock[j] ^= key[(short)(keyOff + j)];
+        }
+
+        sha256.update(hmacBlock, (short) 0, HMAC_BLOCK_SIZE_256);
+
+        if (i == 0) {
+          sha256.doFinal(in, inOff, inLen, out, outOff);
+        } else {
+          sha256.doFinal(out, outOff, HMAC_OUT_SIZE_256, out, outOff);
+        }
+      }
+    }
+  }
+
+  /**
+   * HKDF-SHA256 (Extract-then-Expand) as defined in RFC 5869 (limited to the N=1 case).
+   * Extract: PRK = HMAC-SHA256(key = salt, msg = IKM)
+   * Expand:  OKM = HMAC-SHA256(key = PRK, msg = info || 0x01)
+   *
+   * @param salt the salt (non-zero)
+   * @param saltOff the offset of the salt
+   * @param saltLen the length of the salt
+   * @param ikm the input keying material
+   * @param ikmOff the offset of the input keying material
+   * @param ikmLen the length of the input keying material
+   * @param info the context and application-specific information
+   * @param infoOff the offset of the info
+   * @param infoLen the length of the info
+   * @param okm the output buffer for the output keying material
+   * @param okmOff the offset in the output buffer
+   */
+  void hkdf(byte[] salt, short saltOff, short saltLen, byte[] ikm, short ikmOff, short ikmLen, byte[] info, short infoOff, short infoLen, byte[] okm, short okmOff) {
+    // Extract: PRK = HMAC-SHA256(salt, IKM), stored in scratch
+    hmacSHA256(salt, saltOff, saltLen, ikm, ikmOff, ikmLen, scratch, (short) 0);
+    // Expand: T(1) = HMAC-SHA256(PRK, info || 0x01)
+    Util.arrayCopyNonAtomic(info, infoOff, scratch, HMAC_OUT_SIZE_256, infoLen);
+    scratch[(short)(HMAC_OUT_SIZE_256 + infoLen)] = 1;
+    hmacSHA256(scratch, (short) 0, HMAC_OUT_SIZE_256, scratch, HMAC_OUT_SIZE_256, (short) (infoLen + 1), okm, okmOff);
   }
 
   void bip0340_init_sha256(short tag) {
