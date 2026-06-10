@@ -1301,9 +1301,9 @@ public class KeycardTest {
   @DisplayName("LEE Keys")
   void leeKeysTest() throws Exception {
     byte[] seed = Mnemonic.toBinarySeed("fan empower output between game genius forest bulk party small arm shuffle", "");
-    byte[] expectedPublic = Hex.decode("0444e68023afcd735d4bca23a757a6d2e1b1cf4b55a58ed8fbf58ba1e311cd592ec0f289e5d81f529f9e71371ccd2b68974eac2b4206e2072bcce11859a262d6f3");
-    byte[] expectedNsk = Hex.decode("8d155fdf26755d676085f85e206366d86988d827c349192ee5d5817d87b7e280");
-    byte[] expectedVsk = Hex.decode("76d96b8825daf2bb7a9672d8711122ea22f8f8301964f6f23e640fac94465204");
+    byte[] expectedPublic = Hex.decode("045bdbe46824409ae66c960f4a204ac66adc1646dcfa56a5b455629f99b95a643012390c799fb8a1f5e9140dfe9f6088ab1ded90f496c9d8832df501e3c8e9c45f");
+    byte[] expectedNsk = Hex.decode("a44386392e2112c8c46a7f8378b4c3163011a76664a2b1d23e25a6f35ef90739");
+    byte[] expectedVsk = Hex.decode("d06cc239011a56c8aecec0579b884227d637496a6e3e8f27d70e170f2ec3fa0d97dc323114bb420ef3061010446a9b4cf321ebc895ac8b7f261e3fbcaef79a67");
 
     cmdSet.autoOpenSecureChannel();
     APDUResponse response = cmdSet.verifyPIN("000000");
