@@ -15,6 +15,7 @@ public class Crypto {
 
   final static short KEY_SECRET_SIZE = 32;
   final static short KEY_PUB_SIZE = 65;
+  final static short LEE_VSK_SIZE = 64;
   final static short KEY_DERIVATION_SCRATCH_SIZE = 37;
   final static private short HMAC_OUT_SIZE = 64;
 
@@ -30,6 +31,7 @@ public class Crypto {
   final static byte[] KEY_LEE_PRIV_SEED =  {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'r', 'i', 'v'};
   private final static byte[] LEE_SEED_PRIV = {'L', 'E', 'E', '_', 's', 'e', 'e', 'd', '_', 'p', 'r', 'i', 'v'};
   private final static byte[] LEE_KEY = {'L', 'E','E', '/', 'k', 'e', 'y', 's'};
+  private final static byte[] LEE_VIEWING_SEED = {'L', 'E', 'E', '_', 'v', 'i', 'e', 'w', 'i', 'n', 'g', '_', 's', 'e', 'e', 'd'};
 
   final static byte CONST_NSK = 0x01;
   final static byte CONST_VSK = 0x02;
@@ -107,10 +109,10 @@ public class Crypto {
    * @param iOff the offset in the buffer
    * @return true if successful, false otherwise
    */
-  boolean bip32CKDPriv(byte[] i, short iOff, byte[] scratch, short scratchOff, byte[] data, short dataOff, byte[] output, short outOff) {
+  boolean bip32CKDPriv(byte[] i, short iOff, byte[] scratch, short scratchOff, byte[] data, short dataOff, byte[] output, short outOff, boolean forceHardened) {
     short off = scratchOff;
 
-    if (bip32IsHardened(i, iOff)) {
+    if (forceHardened || bip32IsHardened(i, iOff)) {
       scratch[off++] = 0;
       off = Util.arrayCopyNonAtomic(data, dataOff, scratch, off, KEY_SECRET_SIZE);
     } else {
@@ -145,23 +147,49 @@ public class Crypto {
   }
 
   /**
-   * Derives either a nullifier or viewing key
-   * 
-   * @param type the type identifier of the key to derive, either CONST_NSK or CONST_VSK
-   * @param i i the buffer containing the key path element (a 32-bit big endian integer)
+   * Derives a nullifier key (NSK) from the spending secret key (SSK).
+   * NSK = SHA256(LEE/keys || ssk || 0x01 || i || padding_19)
+   *
+   * @param i the buffer containing the key path element (a 32-bit big endian integer)
    * @param iOff the offset in the buffer
    * @param ssk the spending secret key
    * @param sskOff the spending secret key offset
-   * @param output the output buffer
+   * @param output the output buffer for the NSK
    * @param outOff the output buffer offset
    */
-  void leeDeriveFromSSK(byte type, byte[] i, short iOff, byte[] ssk, short sskOff, byte[] output, short outOff) {
+  void leeDeriveNSK(byte[] i, short iOff, byte[] ssk, short sskOff, byte[] output, short outOff) {
     sha256.update(LEE_KEY, (short) 0, (short) LEE_KEY.length);
     sha256.update(ssk, sskOff, KEY_SECRET_SIZE);
-    output[outOff] = type;
+    output[outOff] = CONST_NSK;
     sha256.update(output, outOff, (short) 1);
     sha256.update(i, iOff, (short) 4);
     sha256.doFinal(SECP256k1.SECP256K1_A, (short) 0, (short) 19, output, outOff);
+  }
+
+  /**
+   * Derives a viewing key (VSK) from the spending secret key (SSK).
+   * VSK = HMAC-SHA512("LEE_viewing_seed", LEE/keys || ssk || 0x02 || i || padding_19)
+   *
+   * @param i the buffer containing the key path element (a 32-bit big endian integer)
+   * @param iOff the offset in the buffer
+   * @param ssk the spending secret key
+   * @param sskOff the spending secret key offset
+   * @param output the output buffer for the VSK
+   * @param outOff the output buffer offset
+   */
+  void leeDeriveVSK(byte[] i, short iOff, byte[] ssk, short sskOff, byte[] output, short outOff) {
+    // Build message in scratch: LEE/keys || ssk || 0x02 || i || padding_19
+    short off = 0;
+
+    off = Util.arrayCopyNonAtomic(LEE_KEY, (short) 0, scratch, off, (short) LEE_KEY.length);
+    off = Util.arrayCopyNonAtomic(ssk, sskOff, scratch, off, KEY_SECRET_SIZE);
+
+    scratch[off++] = CONST_VSK;
+    off = Util.arrayCopyNonAtomic(i, iOff, scratch, off, (short) 4);
+    // padding_19: 19 zero bytes (total message = 8 + 32 + 1 + 4 + 19 = 64 bytes)
+    off = Util.arrayFillNonAtomic(scratch, off, (short) 19, (byte) 0);
+
+    hmacSHA512(LEE_VIEWING_SEED, (short) 0, (short) LEE_VIEWING_SEED.length, scratch, (short) 0, off, output, outOff);
   }
 
   /**
@@ -182,26 +210,44 @@ public class Crypto {
   /**
    * Derives child SSK, NSK, VSK and Chain. Derivation is done in place.
    *
-   * @param i
-   * @param iOff
-   * @param nsk
-   * @param nskOff
-   * @param vsk
-   * @param vskOff
-   * @param chain
-   * @param chainOff
+   * Parent hash: SHA256(LEE/keys || nsk || vsk)
+   * Child HMAC: HMAC-SHA512(chain, LEE_seed_priv || parent_hash || i)
+   * Child NSK: SHA256(LEE/keys || ssk || 0x01 || i || padding_19)
+   * Child VSK: HMAC-SHA512("LEE_viewing_seed", LEE/keys || ssk || 0x02 || i || padding_19)
+   * Child chain: upper 32 bytes of HMAC output
+   *
+   * @param i the buffer containing the key path element (a 32-bit big endian integer)
+   * @param iOff the offset in the buffer
+   * @param nsk the parent nullifier secret key (output: child NSK)
+   * @param nskOff the offset of the NSK buffer
+   * @param vsk the parent viewing secret key (output: child VSK)
+   * @param vskOff the offset of the VSK buffer
+   * @param chain the parent chain code (output: child chain code)
+   * @param chainOff the offset of the chain code buffer
+   * @return true if derivation succeeded, false if NSK is zero
    */
   boolean leeDeriveChild(byte[] i, short iOff, byte[] nsk, short nskOff, byte[] vsk, short vskOff, byte[] chain, short chainOff) {
+    // Build HMAC input: LEE_seed_priv || parent_hash || i
     short off = Util.arrayCopyNonAtomic(LEE_SEED_PRIV, (short) 0, scratch, (short) 0, (short) LEE_SEED_PRIV.length);
-    bigMath.modMul(nsk, nskOff, KEY_SECRET_SIZE, vsk, vskOff, KEY_SECRET_SIZE, SECP256k1.SECP256K1_R, (short) 0, KEY_SECRET_SIZE);
-    off = Util.arrayCopyNonAtomic(nsk, nskOff, scratch, off, KEY_SECRET_SIZE);
-    off = Util.arrayCopyNonAtomic(i, iOff, scratch, off, (short) 4);
-    hmacSHA512(chain, chainOff, KEY_SECRET_SIZE, scratch, (short) 0, off, scratch, off);
-    
-    leeDeriveFromSSK(CONST_NSK, i, iOff, scratch, off, nsk, nskOff);
-    leeDeriveFromSSK(CONST_VSK, i, iOff, scratch, off, vsk, vskOff);
 
-    Util.arrayCopyNonAtomic(scratch, (short) (off + KEY_SECRET_SIZE), chain, chainOff, KEY_SECRET_SIZE);
+    // Compute parent hash = SHA256(LEE/keys || nsk || vsk)
+    // Note: VSK is 64 bytes (HMAC-SHA512 output) in the PQ scheme
+    sha256.update(LEE_KEY, (short) 0, (short) LEE_KEY.length);
+    sha256.update(nsk, nskOff, KEY_SECRET_SIZE);
+    sha256.doFinal(vsk, vskOff, LEE_VSK_SIZE, scratch, off);
+    off += KEY_SECRET_SIZE;
+
+    off = Util.arrayCopyNonAtomic(i, iOff, scratch, off, (short) 4);
+
+    // HMAC-SHA512(chain, LEE_seed_priv || parent_hash || i) -> ssk || child_chain
+    hmacSHA512(chain, chainOff, KEY_SECRET_SIZE, scratch, (short) 0, off, scratch, LEE_VSK_SIZE);
+
+    // Copy child chain code (upper 32 bytes of HMAC output)
+    Util.arrayCopyNonAtomic(scratch, (short) (LEE_VSK_SIZE + KEY_SECRET_SIZE), chain, chainOff, KEY_SECRET_SIZE);
+
+    // Derive child NSK and VSK from ssk (lower 32 bytes of HMAC output)
+    leeDeriveNSK(i, iOff, scratch, LEE_VSK_SIZE, nsk, nskOff);
+    leeDeriveVSK(i, iOff, scratch, LEE_VSK_SIZE, vsk, vskOff);
 
     return !isZero256(nsk, nskOff);
   }
