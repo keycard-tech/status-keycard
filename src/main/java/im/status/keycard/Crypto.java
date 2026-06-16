@@ -105,7 +105,7 @@ public class Crypto {
     } catch (CryptoException e) {
       hmacSHA512 = null;
       hmacSHA256 = null;
-      hmacBlock = JCSystem.makeTransientByteArray(HMAC_BLOCK_SIZE_512, JCSystem.CLEAR_ON_RESET);
+      hmacBlock = JCSystem.makeTransientByteArray(HMAC_BLOCK_SIZE_512, JCSystem.CLEAR_ON_DESELECT);
     }
 
   }

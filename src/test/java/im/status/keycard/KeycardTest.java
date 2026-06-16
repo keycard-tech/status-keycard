@@ -407,12 +407,6 @@ public class KeycardTest {
       assertEquals((byte) 0xff, status.getPINRetryCount());
       assertEquals((byte) 0xff, status.getPUKRetryCount());
     }
-
-    // Check that key path is valid
-    response = cmdSet.getStatus(KeycardApplet.GET_STATUS_P1_KEY_PATH);
-    assertEquals(0x9000, response.getSw());
-    KeyPath path = new KeyPath(response.getData());
-    assertNotEquals(null, path);
   }
 
   @Test
@@ -796,9 +790,6 @@ public class KeycardTest {
     // Good case
     response = cmdSet.factoryReset();
     assertEquals(0x9000, response.getSw());
-    
-    response = cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH);
-    assertEquals(0x6985, response.getSw());
 
     response = cmdSet.select();
     assertEquals(0x9000, response.getSw());
@@ -875,95 +866,13 @@ public class KeycardTest {
     assertEquals(0x9000, response.getSw());
     byte[] keyUID = response.getData();
 
-    response = cmdSet.exportCurrentKey(true);
+    response = cmdSet.exportKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
     assertEquals(0x9000, response.getSw());
     byte[] pubKey = response.getData();
 
     verifyKeyUID(keyUID, Arrays.copyOfRange(pubKey, 4, pubKey.length));
   }
 
-  @Test
-  @DisplayName("DERIVE KEY command")
-  void deriveKeyTest() throws Exception {
-    APDUResponse response;
-
-    if (cmdSet.getApplicationInfo().hasSecureChannelCapability()) {
-      // Security condition violation: SecureChannel not open
-      response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x00});
-      assertEquals(0x6985, response.getSw());
-
-      cmdSet.autoOpenSecureChannel();
-    }
-
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      // Security condition violation: PIN is not verified
-      response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x00});
-      assertEquals(0x6985, response.getSw());
-
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    KeyPairGenerator g = keypairGenerator();
-    KeyPair keyPair = g.generateKeyPair();
-    byte[] chainCode = new byte[32];
-    new Random().nextBytes(chainCode);
-
-    if (cmdSet.getApplicationInfo().hasKeyManagementCapability()) {
-      // Condition violation: keyset is not extended
-      response = cmdSet.loadKey(keyPair);
-      assertEquals(0x9000, response.getSw());
-      response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x00});
-      assertEquals(0x6985, response.getSw());
-
-      response = cmdSet.loadKey(keyPair, false, chainCode);
-      assertEquals(0x9000, response.getSw());
-    }
-
-    // Wrong data format
-    response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00});
-    assertEquals(0x6A80, response.getSw());
-    response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00, 0x00, 0x00});
-    assertEquals(0x6A80, response.getSw());
-
-    // Correct
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x01});
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[]{1});
-
-    // 3 levels with hardened key
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x01, (byte) 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[]{1, 0x80000000, 2});
-
-    // From parent
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x03}, KeycardApplet.DERIVE_P1_SOURCE_PARENT);
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[]{1, 0x80000000, 3});
-
-    // Reset master key
-    response = cmdSet.deriveKey(new byte[0]);
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[0]);
-
-    // Try parent when none available
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x03}, KeycardApplet.DERIVE_P1_SOURCE_PARENT);
-    assertEquals(0x6B00, response.getSw());
-
-    // 3 levels with hardened key using separate commands
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x01}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    response = cmdSet.deriveKey(new byte[]{(byte) 0x80, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_CURRENT);
-    assertEquals(0x9000, response.getSw());
-    response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x02}, KeycardApplet.DERIVE_P1_SOURCE_CURRENT);
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[]{1, 0x80000000, 2});
-
-    // Reset master key
-    response = cmdSet.deriveKey(new byte[0]);
-    assertEquals(0x9000, response.getSw());
-    verifyKeyDerivation(keyPair, chainCode, new int[0]);
-  }
 
   @Test
   @DisplayName("SIGN command")
@@ -975,7 +884,7 @@ public class KeycardTest {
 
     if (cmdSet.getApplicationInfo().hasSecureChannelCapability()) {
       // Security condition violation: SecureChannel not open
-      response = cmdSet.sign(hash);
+      response = cmdSet.signWithPath(hash, "m", false);
       assertEquals(0x6985, response.getSw());
 
       cmdSet.autoOpenSecureChannel();
@@ -983,7 +892,7 @@ public class KeycardTest {
 
     if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
       // Security condition violation: PIN not verified
-      response = cmdSet.sign(hash);
+      response = cmdSet.signWithPath(hash, "m", false);
       assertEquals(0x6985, response.getSw());
 
       response = cmdSet.verifyPIN("000000");
@@ -995,32 +904,23 @@ public class KeycardTest {
       assertEquals(0x9000, response.getSw());
     }
 
-    // Wrong Data length
-    response = cmdSet.sign(data);
-    assertEquals(0x6A80, response.getSw());
-
-    // Correctly sign a precomputed hash
-    response = cmdSet.sign(hash);
+    // Correctly sign with master key (path "m" = master)
+    response = cmdSet.signWithPath(hash, "m", false);
     verifySignResp(data, response);
 
-    // Sign and derive
-    String currentPath = new KeyPath(cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH).checkOK().getData()).toString();
-    String updatedPath = new KeyPath(currentPath + "/2").toString();
-    response = cmdSet.signWithPath(hash, updatedPath, false);
+    // Sign with derived path
+    String derivedPath = "m/2";
+    response = cmdSet.signWithPath(hash, derivedPath, false);
     verifySignResp(data, response);
-    assertEquals(currentPath, new KeyPath(cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH).checkOK().getData()).toString());
-    response = cmdSet.signWithPath(hash, updatedPath, true);
-    verifySignResp(data, response);
-    assertEquals(updatedPath, new KeyPath(cmdSet.getStatus(KeycardCommandSet.GET_STATUS_P1_KEY_PATH).checkOK().getData()).toString());
 
     // Sign Schnorr
     if (TARGET != TARGET_SIMULATOR) {
-      response = cmdSet.signWithPath(hash, updatedPath, KeycardCommandSet.SIGN_P2_BIP340_SCHNORR, false);
+      response = cmdSet.signWithPath(hash, derivedPath, KeycardCommandSet.SIGN_P2_BIP340_SCHNORR, false);
       verifySchnorrSignResp(data, response);
     }
 
     // Sign with PINless
-    String pinlessPath = currentPath + "/3";
+    String pinlessPath = "m/3";
     response = cmdSet.setPinlessPath(pinlessPath);
     assertEquals(0x9000, response.getSw());
 
@@ -1053,8 +953,8 @@ public class KeycardTest {
     // Alt PIN
     response = cmdSet.verifyPIN("024680");
     assertEquals(0x9000, response.getSw());
-    
-    response = cmdSet.signWithPath(hash, updatedPath, false);
+
+    response = cmdSet.signWithPath(hash, derivedPath, false);
     verifySignResp(data, response);
   }
 
@@ -1135,27 +1035,12 @@ public class KeycardTest {
     response = cmdSet.setPinlessPath(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02});
     assertEquals(0x9000, response.getSw());
 
-    // Verify that only PINless path can be used without PIN
+    // Verify that PINless sign works without PIN (with secure channel)
     resetAndSelectAndOpenSC();
-    response = cmdSet.sign(hash);
-    assertEquals(0x6985, response.getSw());
-
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00, 0x02}, KeycardApplet.DERIVE_P1_SOURCE_CURRENT);
+    response = cmdSet.signPinless(hash);
     assertEquals(0x9000, response.getSw());
 
-    resetAndSelectAndOpenSC();
-
-    response = cmdSet.sign(hash);
-    assertEquals(0x9000, response.getSw());
-
-    // Verify changing path
+    // Verify changing pinless path
     if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
       response = cmdSet.verifyPIN("000000");
       assertEquals(0x9000, response.getSw());
@@ -1164,22 +1049,10 @@ public class KeycardTest {
     response = cmdSet.setPinlessPath(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01});
     assertEquals(0x9000, response.getSw());
     resetAndSelectAndOpenSC();
-    response = cmdSet.sign(hash);
-    assertEquals(0x6985, response.getSw());
-
-
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    resetAndSelectAndOpenSC();
-    response = cmdSet.sign(hash);
+    response = cmdSet.signPinless(hash);
     assertEquals(0x9000, response.getSw());
 
-    // Reset
+    // Reset pinless path
     if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
       response = cmdSet.verifyPIN("000000");
       assertEquals(0x9000, response.getSw());
@@ -1188,13 +1061,8 @@ public class KeycardTest {
     response = cmdSet.setPinlessPath(new byte[] {});
     assertEquals(0x9000, response.getSw());
     resetAndSelectAndOpenSC();
-    response = cmdSet.sign(hash);
-    assertEquals(0x6985, response.getSw());
-
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.deriveKey(new byte[]{0x00, 0x00, 0x00, 0x02}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-      assertEquals(0x6985, response.getSw());
-    }
+    response = cmdSet.signPinless(hash);
+    assertEquals(0x6A88, response.getSw());
   }
 
   @Test
@@ -1209,7 +1077,7 @@ public class KeycardTest {
 
     if (cmdSet.getApplicationInfo().hasSecureChannelCapability()) {
       // Security condition violation: SecureChannel not open
-      response = cmdSet.exportCurrentKey(true);
+      response = cmdSet.exportKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
       assertEquals(0x6985, response.getSw());
 
       cmdSet.autoOpenSecureChannel();
@@ -1217,7 +1085,7 @@ public class KeycardTest {
 
     if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
       // Security condition violation: PIN not verified
-      response = cmdSet.exportCurrentKey(true);
+      response = cmdSet.exportKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
       assertEquals(0x6985, response.getSw());
 
       response = cmdSet.verifyPIN("000000");
@@ -1229,62 +1097,33 @@ public class KeycardTest {
       assertEquals(0x9000, response.getSw());
     }
 
-    response = cmdSet.deriveKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-
-    // Security condition violation: current key is not exportable
-    response = cmdSet.exportCurrentKey(false);
-    assertEquals(0x6985, response.getSw());
-
-    response = cmdSet.deriveKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2c, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    response = cmdSet.exportCurrentKey(false);
-    assertEquals(0x6985, response.getSw());
-
-    response = cmdSet.deriveKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
-    response = cmdSet.exportCurrentKey(false);
-    assertEquals(0x6985, response.getSw());
-
-    // Export current public key
-    response = cmdSet.exportCurrentKey(true);
+    // Export master public key (empty path)
+    response = cmdSet.exportKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
     assertEquals(0x9000, response.getSw());
     byte[] keyTemplate = response.getData();
+    verifyExportedKey(keyTemplate, keyPair, chainCode, new int[0], true, false);
+
+    // Export derived public key
+    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
+    assertEquals(0x9000, response.getSw());
+    keyTemplate = response.getData();
     verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062d, 0x00000000 }, true, false);
 
-    // Derive & Make current
-    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, true, false);
-    assertEquals(0x9000, response.getSw());
-    keyTemplate = response.getData();
-    verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062d, 0x00000000, 0x00000000 }, false, false);
-
-    // Derive without making current
-    response = cmdSet.exportKey(new byte[] {(byte) 0x00, 0x00, 0x00, 0x01}, KeycardApplet.DERIVE_P1_SOURCE_PARENT, false,false);
-    assertEquals(0x9000, response.getSw());
-    keyTemplate = response.getData();
-    verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062d, 0x00000000, 0x00000001 }, false, false);
-    response = cmdSet.getStatus(KeycardApplet.GET_STATUS_P1_KEY_PATH);
-    assertEquals(0x9000, response.getSw());
-    assertArrayEquals(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, response.getData());
-
-    // Export current
-    response = cmdSet.exportCurrentKey(false);
-    assertEquals(0x9000, response.getSw());
-    keyTemplate = response.getData();
-    verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062d, 0x00000000, 0x00000000 }, false, false);
-
-    // Export extended public
-    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, KeycardCommandSet.EXPORT_KEY_P2_EXTENDED_PUBLIC);
+    // Export derived private key
+    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, false);
     assertEquals(0x6985, response.getSw());
 
+    // Export derived private key (EIP-1581 path)
+    response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, false);
+    assertEquals(0x9000, response.getSw());
+    keyTemplate = response.getData();
+    verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062d, 0x00000000, 0x00000000 }, false, false);
+
+    // Export extended public key
     response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2c, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, KeycardCommandSet.EXPORT_KEY_P2_EXTENDED_PUBLIC);
     assertEquals(0x9000, response.getSw());
     keyTemplate = response.getData();
     verifyExportedKey(keyTemplate, keyPair, chainCode, new int[] { 0x8000002b, 0x8000003c, 0x8000062c, 0x00000000 }, true, true);
-
-    // Reset
-    response = cmdSet.deriveKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-    assertEquals(0x9000, response.getSw());
 
     // Alt PIN
     response = cmdSet.verifyPIN("024680");
@@ -1294,7 +1133,6 @@ public class KeycardTest {
     assertEquals(0x9000, response.getSw());
     keyTemplate = response.getData();
     verifyExportedKey(keyTemplate, keyPair, sha256(chainCode), new int[] { 0x8000002b, 0x8000003c, 0x8000062c, 0x00000000 }, true, true);
-
   }
 
   @Test
@@ -1464,7 +1302,7 @@ public class KeycardTest {
     response = cmdSet.loadKey(seed);
     assertEquals(0x9000, response.getSw());
 
-    response = cmdSet.exportCurrentKey(true);
+    response = cmdSet.exportKey("m", false, true);
     assertEquals(0x9000, response.getSw());
 
     BIP32KeyPair pubKey = BIP32KeyPair.fromTLV(response.getData());
@@ -1523,59 +1361,6 @@ public class KeycardTest {
     assertFalse(ethSendTransaction.hasError());
   }
 
-  @Test
-  @DisplayName("Performance Test")
-  @Tag("manual")
-  void performanceTest() throws Exception {
-    long time, deriveAccount = 0, deriveParent = 0, deriveParentHardened = 0;
-    final long SAMPLE_COUNT = 10;
-
-    System.out.println("Measuring key derivation performance. All times are expressed in milliseconds");
-    System.out.println("***********************************************" );
-
-    // Prepare the card
-    cmdSet.autoOpenSecureChannel();
-    APDUResponse response = cmdSet.verifyPIN("000000");
-    assertEquals(0x9000, response.getSw());
-    KeyPairGenerator g = keypairGenerator();
-    KeyPair keyPair = g.generateKeyPair();
-    byte[] chainCode = new byte[32];
-    new Random().nextBytes(chainCode);
-
-    response = cmdSet.loadKey(keyPair, false, chainCode);
-    assertEquals(0x9000, response.getSw());
-
-    for (int i = 0; i < SAMPLE_COUNT; i++) {
-      time = System.currentTimeMillis();
-      response = cmdSet.deriveKey(new byte[] { (byte) 0x80, 0x00, 0x00, 0x2C, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00, (byte) 0x00, 0x00, 0x00, 0x00}, KeycardApplet.DERIVE_P1_SOURCE_MASTER);
-      deriveAccount += System.currentTimeMillis() - time;
-      assertEquals(0x9000, response.getSw());
-    }
-
-    deriveAccount /= SAMPLE_COUNT;
-
-    for (int i = 0; i < SAMPLE_COUNT; i++) {
-      time = System.currentTimeMillis();
-      response = cmdSet.deriveKey(new byte[] {0x00, 0x00, 0x00, (byte) i}, KeycardApplet.DERIVE_P1_SOURCE_PARENT);
-      deriveParent += System.currentTimeMillis() - time;
-      assertEquals(0x9000, response.getSw());
-    }
-
-    deriveParent /= SAMPLE_COUNT;
-
-    for (int i = 0; i < SAMPLE_COUNT; i++) {
-      time = System.currentTimeMillis();
-      response = cmdSet.deriveKey(new byte[] {(byte) 0x80, 0x00, 0x00, (byte) i}, KeycardApplet.DERIVE_P1_SOURCE_PARENT);
-      deriveParentHardened += System.currentTimeMillis() - time;
-      assertEquals(0x9000, response.getSw());
-    }
-
-    deriveParentHardened /= SAMPLE_COUNT;
-
-    System.out.println("Time to derive m/44'/60'/0'/0/0: " + deriveAccount);
-    System.out.println("Time to switch m/44'/60'/0'/0/0': " + deriveParentHardened);
-    System.out.println("Time to switch back to m/44'/60'/0'/0/0: " + deriveParent);
-  }
 
   private KeyPairGenerator keypairGenerator() throws Exception {
     ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
@@ -1646,44 +1431,6 @@ public class KeycardTest {
       if ((check[(i - bits.length / 33 * 32) / 8] & (1 << (7 - (i % 8))) ^ (bits[i] ? 1 : 0) << (7 - (i % 8))) != 0) {
         fail("Checksum is invalid");
       }
-    }
-  }
-
-  private void verifyKeyDerivation(KeyPair keyPair, byte[] chainCode, int[] path) throws Exception {
-    byte[] hash = sha256(new byte[8]);
-    APDUResponse resp = cmdSet.sign(hash);
-    assertEquals(0x9000, resp.getSw());
-    byte[] sig = resp.getData();
-    byte[] publicKey = extractPublicKeyFromSignature(sig);
-    sig = extractSignature(sig);
-
-    if (cmdSet.getApplicationInfo().hasKeyManagementCapability()) {
-      DeterministicKey key = deriveKey(keyPair, chainCode, path);
-
-      assertTrue(key.verify(hash, sig));
-      assertArrayEquals(key.getPubKeyPoint().getEncoded(false), publicKey);
-    } else {
-      Signature signature = Signature.getInstance("SHA256withECDSA", "BC");
-
-      ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
-      ECPublicKeySpec cardKeySpec = new ECPublicKeySpec(ecSpec.getCurve().decodePoint(publicKey), ecSpec);
-      ECPublicKey cardKey = (ECPublicKey) KeyFactory.getInstance("ECDSA", "BC").generatePublic(cardKeySpec);
-
-      signature.initVerify(cardKey);
-      signature.update(new byte[8]);
-      assertTrue(signature.verify(sig));
-    }
-
-    resp = cmdSet.getStatus(KeycardApplet.GET_STATUS_P1_KEY_PATH);
-    assertEquals(0x9000, resp.getSw());
-    byte[] rawPath = resp.getData();
-
-    assertEquals(path.length * 4, rawPath.length);
-
-    for (int i = 0; i < path.length; i++) {
-      int k = path[i];
-      int k1 = (rawPath[i * 4] << 24) | (rawPath[(i * 4) + 1] << 16) | (rawPath[(i * 4) + 2] << 8) | rawPath[(i * 4) + 3];
-      assertEquals(k, k1);
     }
   }
 
@@ -1764,7 +1511,7 @@ public class KeycardTest {
   private Sign.SignatureData signMessage(byte[] message) throws Exception {
     byte[] messageHash = Hash.sha3(message);
 
-    APDUResponse response = cmdSet.sign(messageHash);
+    APDUResponse response = cmdSet.signWithPath(messageHash, "m", false);
     assertEquals(0x9000, response.getSw());
     byte[] respData = response.getData();
     byte[] rawSig = extractSignature(respData);
