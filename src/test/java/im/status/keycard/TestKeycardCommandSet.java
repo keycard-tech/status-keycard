@@ -93,4 +93,17 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
     byte[] publicKey = ((org.bouncycastle.jce.interfaces.ECPublicKey) kp.getPublic()).getQ().getEncoded(true);
     return openSecureChannel(publicKey);
   }
+
+  /**
+   * Sends a raw GET DATA APDU with the given P1 (data type) and P2 (offset) parameters.
+   * This is needed because the SDK does not support segmented GET DATA for NDEF.
+   *
+   * @param p1 the data type (e.g. STORE_DATA_P1_NDEF = 0x01)
+   * @param p2 the byte offset into the data
+   * @return the raw card response
+   * @throws IOException communication error
+   */
+  public APDUResponse getDataRaw(byte p1, byte p2) throws IOException {
+    return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_GET_DATA, p1, p2, new byte[0]));
+  }
 }

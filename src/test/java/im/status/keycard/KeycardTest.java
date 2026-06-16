@@ -826,7 +826,7 @@ public class KeycardTest {
     assertEquals(0x9000, response.getSw());
     assertEquals(32, response.getData().length);
 
-    int maxSecureChannelChallengeLength = SecureChannelV2.SC_MAX_PLAIN_LENGTH - KeycardApplet.SW_LENGTH;
+    int maxSecureChannelChallengeLength = SecureChannelV2.SC_MAX_RESPONSE_LENGTH;
 
     response = cmdSet.getChallenge(maxSecureChannelChallengeLength);
     assertEquals(0x9000, response.getSw());
@@ -1270,6 +1270,56 @@ public class KeycardTest {
     assertEquals(0x9000, response.getSw());
     CashApplicationInfo info = new CashApplicationInfo(response.getData());
     assertArrayEquals(data, info.getPubData());
+  }
+
+  @Test
+  @DisplayName("GET DATA NDEF with output segmentation")
+  @Capabilities("ndef")
+  void getDataNdefSegmentationTest() throws Exception {
+    cmdSet.autoOpenSecureChannel();
+
+    APDUResponse response = cmdSet.verifyPIN("000000");
+    assertEquals(0x9000, response.getSw());
+
+    // Create a 500-byte NDEF payload with a deterministic pattern
+    int payloadLen = 500;
+    byte[] payload = new byte[payloadLen];
+    for (int i = 0; i < payloadLen; i++) {
+      payload[i] = (byte) (i & 0xFF);
+    }
+
+    // Build NDEF data: 2-byte big-endian length + payload
+    byte[] ndefData = new byte[2 + payloadLen];
+    ndefData[0] = (byte) (payloadLen >> 8);
+    ndefData[1] = (byte) (payloadLen & 0xFF);
+    System.arraycopy(payload, 0, ndefData, 2, payloadLen);
+
+    // Store the NDEF data (SDK handles input segmentation automatically)
+    response = cmdSet.setNDEF(payload);
+    assertEquals(0x9000, response.getSw());
+
+    // Total stored length = payload (500) + 2-byte length header = 502 bytes
+    int totalLen = payloadLen + 2;
+    int maxChunk = (SecureChannelV2.SC_MAX_RESPONSE_LENGTH / 4) * 4;
+
+    // Verify individual segment boundaries
+    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) 0);
+    assertEquals(0x9000, response.getSw());
+    assertEquals(maxChunk, response.getData().length, "First segment should be max size");
+
+    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) (maxChunk / 4));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(maxChunk, response.getData().length, "Second segment should be max size");
+
+    // Last segment
+    int lastOffset = (short) (maxChunk * 2);
+    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) (lastOffset / 4));
+    assertEquals(0x9000, response.getSw());
+    assertEquals(totalLen - lastOffset, response.getData().length, "Last segment size mismatch");
+
+    // Offset beyond data fails empty
+    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) ((totalLen + 3) / 4));
+    assertEquals(0x6A86, response.getSw());
   }
 
   @Test

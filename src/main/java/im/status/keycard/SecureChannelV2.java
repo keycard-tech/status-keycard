@@ -16,6 +16,7 @@ public class SecureChannelV2 {
     private static final byte[] PROTOCOL_LABEL = { 's', 'c', '_', 'v', '2', '_', 'c', 'c', 'm' };
 
     static final short SC_MAX_PLAIN_LENGTH = 247;
+    static final short SC_MAX_RESPONSE_LENGTH = SC_MAX_PLAIN_LENGTH - 2;
     static final short HKDF_SALT_SIZE = 32;
     static final short PUBKEY_SIZE = 65;
     static final short ECDH_SHARED_X_SIZE = 32;
