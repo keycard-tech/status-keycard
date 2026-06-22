@@ -66,6 +66,7 @@ public class CashApplet extends Applet {
 
     // Since selection can happen not only by a SELECT command, we check for that separately.
     if (selectingApplet()) {
+      secp256k1.onSelect();
       selectApplet(apdu);
       return;
     }
@@ -76,9 +77,6 @@ public class CashApplet extends Applet {
       switch (apduBuffer[ISO7816.OFFSET_INS]) {
         case KeycardApplet.INS_SIGN:
           sign(apdu);
-          break;
-        case IdentApplet.INS_IDENTIFY_CARD:
-          IdentApplet.identifyCard(apdu, null, crypto.ecdsa);
           break;
         default:
           ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);

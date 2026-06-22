@@ -37,18 +37,13 @@ javacard {
       aid = '0xA0:0x00:0x00:0x08:0x04:0x00:0x01:0x04'
       className = 'IdentApplet'
     }
-    version = '3.2'
+    version = '4.0'
   }
 }
 
 def testTarget = project.properties['im.status.keycard.test.target']
 if (!testTarget) {
   testTarget = 'card'
-}
-
-def pairingPass = project.properties['im.status.keycard.test.pairing']
-if (!pairingPass) {
-  pairingPass = 'KeycardDefaultPairing'
 }
 
 
@@ -65,7 +60,7 @@ dependencies {
   testCompile('org.web3j:core:2.3.1')
   testCompile('org.bitcoinj:bitcoinj-core:0.14.5')
   testCompile('com.github.martinpaljak:apdu4j-pcsc:25.03.11')
-  testCompile('com.github.status-im.status-keycard-java:desktop:e898afd')
+  testCompile('com.github.status-im.status-keycard-java:desktop:b4ed9ca')
   testCompile('org.bouncycastle:bcprov-jdk15on:1.65')
   testCompile("org.junit.jupiter:junit-jupiter-api:5.1.1")
   testRuntime("org.junit.jupiter:junit-jupiter-engine:5.1.1")
@@ -97,7 +92,7 @@ compileTestJava {
 }
 
 afterEvaluate {
-  def jvmArgs = ["-Dim.status.keycard.test.target=${testTarget}", "-Dim.status.keycard.test.pairing=${pairingPass}"]
+  def jvmArgs = ["-Dim.status.keycard.test.target=${testTarget}"]
 
   if (testTarget == 'simulator') {
     jvmArgs.push('-noverify')
