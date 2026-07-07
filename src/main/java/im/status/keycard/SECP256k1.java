@@ -55,8 +55,6 @@ public class SECP256k1 {
   private static final short SCHNORR_PUB_OFF = (short) 32;
   private static final short SCHNORR_K_OFF = (short) 97;
   private static final short SCHNORR_OUT_SIG_OFF = (short) 34;
-  // Free scratch region (SCHNORR_K_OFF + 32 = 129; Crypto.SCRATCH_SIZE = 176, so 32 bytes fit
-  // here with room to spare) used to preserve the message hash — see schnorrSign() below.
   private static final short SCHNORR_HASH_OFF = (short) 129;
 
   static final byte SIGN_ECDSA = 0x00;
@@ -149,12 +147,6 @@ public class SECP256k1 {
   }
 
   short schnorrSign(Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
-    // `hash` and `out` may alias — KeycardApplet.sign() lays out the APDU buffer so the
-    // signature output offset lands exactly on the hash's own offset (safe for the hardware
-    // ECDSA path, which fully consumes its input before writing output, but not for this
-    // software implementation, which writes the public key into `out` below before `hash` has
-    // been read for the nonce/challenge digests). Copy the hash out to scratch space first so
-    // the rest of this method can't read a value that this method itself already overwrote.
     Util.arrayCopyNonAtomic(hash, hashOff, crypto.scratch, SCHNORR_HASH_OFF, (short) 32);
     hash = crypto.scratch;
     hashOff = SCHNORR_HASH_OFF;
