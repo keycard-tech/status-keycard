@@ -919,37 +919,6 @@ public class KeycardTest {
       verifySchnorrSignResp(data, response);
     }
 
-    // Sign with PINless
-    String pinlessPath = "m/3";
-    response = cmdSet.setPinlessPath(pinlessPath);
-    assertEquals(0x9000, response.getSw());
-
-    // No secure channel or PIN auth
-    response = cmdSet.select();
-    assertEquals(0x9000, response.getSw());
-
-    response = cmdSet.signPinless(hash);
-    assertEquals(0x6985, response.getSw());
-
-    // With secure channel
-    if (cmdSet.getApplicationInfo().hasSecureChannelCapability()) {
-      cmdSet.autoOpenSecureChannel();
-      response = cmdSet.signPinless(hash);
-      verifySignResp(data, response);
-    }
-
-    // No pinless path
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    response = cmdSet.resetPinlessPath();
-    assertEquals(0x9000, response.getSw());
-
-    response = cmdSet.signPinless(hash);
-    assertEquals(0x6A88, response.getSw());
-
     // Alt PIN
     response = cmdSet.verifyPIN("024680");
     assertEquals(0x9000, response.getSw());
@@ -987,82 +956,6 @@ public class KeycardTest {
     signature.update(data);
     assertTrue(signature.verify(sig));
     assertFalse(isMalleable(sig));
-  }
-
-  @Test
-  @DisplayName("SET PINLESS PATH command")
-  @Capabilities("credentialsManagement") // The current test is not adapted to run automatically on devices without credentials management, since the tester must know what button to press
-  void setPinlessPathTest() throws Exception {
-    byte[] data = "some data to be hashed".getBytes();
-    byte[] hash = sha256(data);
-
-    KeyPairGenerator g = keypairGenerator();
-    KeyPair keyPair = g.generateKeyPair();
-    byte[] chainCode = new byte[32];
-    new Random().nextBytes(chainCode);
-
-    APDUResponse response;
-
-    if (cmdSet.getApplicationInfo().hasSecureChannelCapability()) {
-      // Security condition violation: SecureChannel not open
-      response = cmdSet.setPinlessPath(new byte[]{0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02});
-      assertEquals(0x6985, response.getSw());
-
-      cmdSet.autoOpenSecureChannel();
-    }
-
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      // Security condition violation: PIN not verified
-      response = cmdSet.setPinlessPath(new byte[]{0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02});
-      assertEquals(0x6985, response.getSw());
-
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    if (!cmdSet.getApplicationInfo().hasMasterKey()) {
-      response = cmdSet.loadKey(keyPair, false, chainCode);
-      assertEquals(0x9000, response.getSw());
-    }
-
-    // Wrong data
-    response = cmdSet.setPinlessPath(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00});
-    assertEquals(0x6a80, response.getSw());
-    response = cmdSet.setPinlessPath(new byte[(KeycardApplet.KEY_PATH_MAX_DEPTH + 1)* 4]);
-    assertEquals(0x6a80, response.getSw());
-
-    // Correct
-    response = cmdSet.setPinlessPath(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02});
-    assertEquals(0x9000, response.getSw());
-
-    // Verify that PINless sign works without PIN (with secure channel)
-    resetAndSelectAndOpenSC();
-    response = cmdSet.signPinless(hash);
-    assertEquals(0x9000, response.getSw());
-
-    // Verify changing pinless path
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    response = cmdSet.setPinlessPath(new byte[] {0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01});
-    assertEquals(0x9000, response.getSw());
-    resetAndSelectAndOpenSC();
-    response = cmdSet.signPinless(hash);
-    assertEquals(0x9000, response.getSw());
-
-    // Reset pinless path
-    if (cmdSet.getApplicationInfo().hasCredentialsManagementCapability()) {
-      response = cmdSet.verifyPIN("000000");
-      assertEquals(0x9000, response.getSw());
-    }
-
-    response = cmdSet.setPinlessPath(new byte[] {});
-    assertEquals(0x9000, response.getSw());
-    resetAndSelectAndOpenSC();
-    response = cmdSet.signPinless(hash);
-    assertEquals(0x6A88, response.getSw());
   }
 
   @Test

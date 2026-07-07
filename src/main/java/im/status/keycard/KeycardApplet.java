@@ -142,9 +142,6 @@ public class KeycardApplet extends Applet {
 
   private byte[] tmpPath; // byte 0 = path length, bytes 1..N = path data
 
-  private byte[] pinlessPath;
-  private short pinlessPathLen;
-
   private byte[] keyUID;
 
   private Crypto crypto;
@@ -191,7 +188,6 @@ public class KeycardApplet extends Applet {
     leeMasterChainCode = new byte[CHAIN_CODE_SIZE];
     leeChainCode = leeMasterChainCode;
 
-    pinlessPath = new byte[KEY_PATH_MAX_DEPTH * 4];
     tmpPath = JCSystem.makeTransientByteArray((short)(KEY_PATH_MAX_DEPTH * 4 + 1), JCSystem.CLEAR_ON_DESELECT);
 
     keyUID = new byte[KEY_UID_LENGTH];
@@ -304,9 +300,6 @@ public class KeycardApplet extends Applet {
         break;
       case INS_SIGN:
         sign(apdu);
-        break;
-      case INS_SET_PINLESS_PATH:
-        setPinlessPath(apdu);
         break;
       case INS_EXPORT_KEY:
         exportKey(apdu);
@@ -678,14 +671,6 @@ public class KeycardApplet extends Applet {
   }
 
   /**
-   * Resets the status of the keys. This method must be called immediately before committing the transaction where key
-   * manipulation has happened to be sure that the state is always consistent.
-   */
-  private void resetKeyStatus() {
-    pinlessPathLen = 0;
-  }
-
-  /**
    * Called internally by the loadKey method to load a key in the TLV format. The presence of the public key is optional.
    * The presence of the chain code determines whether the key is extended or not.
    *
@@ -736,7 +721,6 @@ public class KeycardApplet extends Applet {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    resetKeyStatus();
     generateKeyUIDAndPrepareResponse(apduBuffer);
     JCSystem.commitTransaction();
   }
@@ -787,7 +771,6 @@ public class KeycardApplet extends Applet {
 
     masterPublic.setW(apduBuffer, (short) 0, pubLen);
 
-    resetKeyStatus();
     generateKeyUIDAndPrepareResponse(apduBuffer);
     JCSystem.commitTransaction();
   }
@@ -951,7 +934,6 @@ public class KeycardApplet extends Applet {
    * Clear all keys and erases the key UID.
    */
   private void clearKeys() {
-    pinlessPathLen = 0;
     isExtended = false;
     masterPrivate.clearKey();
     masterPublic.clearKey();
@@ -960,7 +942,6 @@ public class KeycardApplet extends Applet {
     Util.arrayFillNonAtomic(masterChainCode, (short) 0, (short) masterChainCode.length, (byte) 0);
     Util.arrayFillNonAtomic(altChainCode, (short) 0, (short) altChainCode.length, (byte) 0);
     Util.arrayFillNonAtomic(leeMasterChainCode, (short) 0, (short) leeMasterChainCode.length, (byte) 0);
-    Util.arrayFillNonAtomic(pinlessPath, (short) 0, (short) pinlessPath.length, (byte) 0);
     Util.arrayFillNonAtomic(tmpPath, (short) 0, (short) tmpPath.length, (byte) 0);
     Util.arrayFillNonAtomic(derivationOutput, (short) 0, (short) derivationOutput.length, (byte) 0);
     Util.arrayFillNonAtomic(keyUID, (short) 0, (short) keyUID.length, (byte) 0);
@@ -1050,13 +1031,9 @@ public class KeycardApplet extends Applet {
    */
   private void sign(APDU apdu) {
     byte[] apduBuffer = apdu.getBuffer();
-    boolean usePinless = false;
 
     switch(apduBuffer[OFFSET_P1]) {
       case SIGN_P1_DERIVE:
-        break;
-      case SIGN_P1_PINLESS:
-        usePinless = true;
         break;
       default:
         ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
@@ -1065,23 +1042,14 @@ public class KeycardApplet extends Applet {
 
     short len = (short) (apduBuffer[ISO7816.OFFSET_LC] & (short) 0xFF);
 
-    if (usePinless && pinlessPathLen == 0) {
-      ISOException.throwIt(SW_REFERENCED_DATA_NOT_FOUND);
-    }
-
-    if (!usePinless && len < MessageDigest.LENGTH_SHA_256) {
+    if (len < MessageDigest.LENGTH_SHA_256) {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    if (usePinless) {
-      tmpPath[0] = (byte) pinlessPathLen;
-      Util.arrayCopyNonAtomic(pinlessPath, (short) 0, tmpPath, (short) 1, pinlessPathLen);
-    } else {
-      short pathLen = (short) (len - MessageDigest.LENGTH_SHA_256);
-      updateDerivationPath(apduBuffer, MessageDigest.LENGTH_SHA_256, pathLen);
-    }
+    short pathLen = (short) (len - MessageDigest.LENGTH_SHA_256);
+    updateDerivationPath(apduBuffer, MessageDigest.LENGTH_SHA_256, pathLen);
 
-    if (!((pin.isValidated() || usePinless) && masterPrivate.isInitialized())) {
+    if (!(pin.isValidated() && masterPrivate.isInitialized())) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
 
@@ -1103,32 +1071,6 @@ public class KeycardApplet extends Applet {
     apduBuffer[(short)(OFFSET_CDATA + 2)] = (byte) (outLen - 3);
 
     secureChannel.respond(apdu, outLen, ISO7816.SW_NO_ERROR);
-  }
-
-  /**
-   * Processes the SET PINLESS PATH command. Requires an open secure channel and the PIN to be verified. It does not
-   * require keys to be loaded or the current key path to be set at a specific value. The data is formatted in the same
-   * way as for DERIVE KEY. In case the sequence of integers is empty, the PIN-less path is simply unset, so the master
-   * key can never become PIN-less.
-   *
-   * @param apdu the JCRE-owned APDU object.
-   */
-  private void setPinlessPath(APDU apdu) {
-    byte[] apduBuffer = apdu.getBuffer();
-    short len = (short) (apduBuffer[ISO7816.OFFSET_LC] & 0xFF);
-
-    if (!pin.isValidated()) {
-      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
-    }
-
-    if (((short) (len % 4) != 0) || (len > pinlessPath.length)) {
-      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
-    }
-
-    JCSystem.beginTransaction();
-    pinlessPathLen = len;
-    Util.arrayCopy(apduBuffer, ISO7816.OFFSET_CDATA, pinlessPath, (short) 0, len);
-    JCSystem.commitTransaction();
   }
 
   /**
