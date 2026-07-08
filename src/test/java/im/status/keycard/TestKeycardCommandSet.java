@@ -106,4 +106,16 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
   public APDUResponse getDataRaw(byte p1, byte p2) throws IOException {
     return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_GET_DATA, p1, p2, new byte[0]));
   }
+
+  /**
+   * Exports derived secret material from the BIP85 subtree.
+   * 
+   * @param p1 length of desired output
+   * @param data the derivation path
+   * @return
+   * @throws IOException
+   */
+  public APDUResponse exportBIP85(int p1, byte[] data) throws IOException {
+    return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_EXPORT_BIP85, p1, 0, data));
+  }
 }

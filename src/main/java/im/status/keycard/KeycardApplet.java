@@ -30,6 +30,7 @@ public class KeycardApplet extends Applet {
   static final byte INS_SET_PINLESS_PATH = (byte) 0xC1;
   static final byte INS_EXPORT_KEY = (byte) 0xC2;
   static final byte INS_EXPORT_LEE = (byte) 0xC3;
+  static final byte INS_EXPORT_BIP85 = (byte) 0xC4;
   static final byte INS_GET_DATA = (byte) 0xCA;
   static final byte INS_STORE_DATA = (byte) 0xE2;
   static final byte INS_GET_CHALLENGE = (byte) 0x84;
@@ -119,6 +120,7 @@ public class KeycardApplet extends Applet {
   static final byte APPLICATION_CAPABILITIES = (byte)(CAPABILITY_SECURE_CHANNEL | CAPABILITY_KEY_MANAGEMENT | CAPABILITY_CREDENTIALS_MANAGEMENT | CAPABILITY_NDEF | CAPABILITY_FACTORY_RESET);
 
   static final byte[] EIP_1581_PREFIX = { (byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D};
+  static final byte[] BIP85_PREFIX = { (byte) 0x84, (byte) 0xFD, (byte) 0x1D, (byte) 0x48 };
 
   private static final byte SEED_BIP32 = 0x00;
   private static final byte SEED_LEE = 0x01;
@@ -316,6 +318,9 @@ public class KeycardApplet extends Applet {
       case INS_GET_CHALLENGE:
         getChallenge(apdu);
         return;
+      case INS_EXPORT_BIP85:
+        exportBIP85(apdu);
+        break;
       default:
         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         break;
@@ -697,6 +702,7 @@ public class KeycardApplet extends Applet {
       isExtended = (apduBuffer[chainOffset] == TLV_CHAIN_CODE);
 
       masterPrivate.setS(apduBuffer, (short) (privOffset + 2), apduBuffer[(short) (privOffset + 1)]);
+      masterSsk.clearKey();
 
       if (isExtended) {
         if (apduBuffer[(short) (chainOffset + 1)] == CHAIN_CODE_SIZE) {
@@ -765,6 +771,8 @@ public class KeycardApplet extends Applet {
     if (outOffLee > 0) {
       masterSsk.setKey(apduBuffer, outOffLee);
       Util.arrayCopy(apduBuffer, (short) (outOffLee + CHAIN_CODE_SIZE), leeMasterChainCode, (short) 0, CHAIN_CODE_SIZE);
+    } else {
+      masterSsk.clearKey();
     }
 
     short pubLen = secp256k1.derivePublicKey(masterPrivate, apduBuffer, (short) 0);
@@ -1220,6 +1228,39 @@ public class KeycardApplet extends Applet {
   }
 
   /**
+   * Processes the EXPORT BIP85 command. Derives deterministic entropy from the BIP32 keychain.
+   * Requires an open secure channel and the PIN to be verified.
+   *
+   * @param apdu the JCRE-owned APDU object.
+   */
+  private void exportBIP85(APDU apdu) {
+    byte[] apduBuffer = apdu.getBuffer();
+
+    byte outLen = apduBuffer[OFFSET_P1];
+    short pathLen = (short) apduBuffer[ISO7816.OFFSET_LC];
+
+    if (!pin.isValidated() || !masterPrivate.isInitialized()) {
+      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+    }
+
+    if (outLen < 1 || outLen > 64) {
+      ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+    }
+
+    updateDerivationPath(apduBuffer, (short) 0, pathLen);
+
+    if (!isBIP85Path()) {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+
+    doDerive(apduBuffer, (short) 0);
+
+    crypto.hmacSHA512(Crypto.KEY_BIP85, (short) 0, (short) Crypto.KEY_BIP85.length, derivationOutput, (short) 0, Crypto.KEY_SECRET_SIZE, apduBuffer, OFFSET_CDATA);
+
+    secureChannel.respond(apdu, outLen, ISO7816.SW_NO_ERROR);
+  }
+
+  /**
    * Processes the GET DATA command.
    *
    * @param apdu the JCRE-owned APDU object.
@@ -1329,6 +1370,24 @@ public class KeycardApplet extends Applet {
 
   private boolean isEIP1581() {
     return (tmpPath[0] >= (short)(((short) EIP_1581_PREFIX.length) + 8)) && (Util.arrayCompare(EIP_1581_PREFIX, (short) 0, tmpPath, (short) 1, (short) EIP_1581_PREFIX.length) == 0);   
+  }
+
+  private boolean isBIP85Path() {
+    if ((short) tmpPath[0] < (short) (BIP85_PREFIX.length + 4)) {
+      return false;
+    }
+    
+    if (Util.arrayCompare(BIP85_PREFIX, (short) 0, tmpPath, (short) 1, (short) BIP85_PREFIX.length) != 0) {
+      return false;
+    }
+
+    for (short i = 1; i < tmpPath[0]; i += 4) {
+      if ((tmpPath[i] & (byte) 0x80) != (byte) 0x80) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**

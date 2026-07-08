@@ -31,6 +31,7 @@ public class Crypto {
   final static byte[] KEY_BITCOIN_SEED = {'B', 'i', 't', 'c', 'o', 'i', 'n', ' ', 's', 'e', 'e', 'd'};
   final static byte[] KEY_LEE_PUB_SEED = {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'u', 'b'};
   final static byte[] KEY_LEE_PRIV_SEED =  {'L', 'E', 'E', '_', 'm', 'a', 's', 't', 'e', 'r', '_', 'p', 'r', 'i', 'v'};
+  final static byte[] KEY_BIP85 = {'b', 'i', 'p', '-', 'e', 'n', 't', 'r', 'o', 'p', 'y', '-', 'f', 'r', 'o', 'm', '-', 'k'};
   private final static byte[] LEE_SEED_PRIV = {'L', 'E', 'E', '_', 's', 'e', 'e', 'd', '_', 'p', 'r', 'i', 'v'};
   private final static byte[] LEE_KEY = {'L', 'E','E', '/', 'k', 'e', 'y', 's'};
   private final static byte[] LEE_VIEWING_SEED = {'L', 'E', 'E', '_', 'v', 'i', 'e', 'w', 'i', 'n', 'g', '_', 's', 'e', 'e', 'd'};
@@ -436,7 +437,7 @@ public class Crypto {
    * @param out the output buffer
    * @param outOff the offset in the output buffer
    */
-  private void hmacSHA512(byte[] key, short keyOff, short keyLen, byte[] in, short inOff, short inLen, byte[] out, short outOff) {
+  void hmacSHA512(byte[] key, short keyOff, short keyLen, byte[] in, short inOff, short inLen, byte[] out, short outOff) {
     if (hmacSHA512 != null) {
       hmacKey.setKey(key, keyOff, keyLen);
       hmacSHA512.init(hmacKey, Signature.MODE_SIGN);
