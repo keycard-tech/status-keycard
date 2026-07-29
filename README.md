@@ -57,27 +57,25 @@ if you want to test using the simulator instead of a real card, create a file na
 before running the tests.
 
 # What kind of smartcards can I use? 
-
 * The applet requires JavaCard 3.0.5 or later.
 * The class byte of the APDU is not checked since there are no conflicting INS code.
 * The GlobalPlatform ISD keys are set to 404142434445464748494a4b4c4d4e4f (GlobalPlatform default keys) or c212e073ff8b4bbfaff4de8ab655221f (Keycard development cards default keys).
-
-Following algorithm is part of JavaCard 3.0.5 and must be supported by the card. This is why we ask for JavaCard 3.0.5+ cards: it is required at installation time and there is no fallback. Some 3.0.4 cards implement it anyway and will also work.
-* KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY
-
-Following algorithms are part of JavaCard 3.0.4 and must be supported by the card:
-* Cipher.ALG_AES_BLOCK_128_CBC_NOPAD
-* Cipher.ALG_AES_CBC_ISO9797_M2
-* KeyAgreement.ALG_EC_SVDP_DH_PLAIN
-* KeyPair.ALG_EC_FP (generation of 256-bit keys)
-* MessageDigest.ALG_SHA_256
-* MessageDigest.ALG_SHA_512
-* RandomData.ALG_SECURE_RANDOM
-* Signature.ALG_AES_MAC_128_NOPAD
-* Signature.ALG_ECDSA_SHA_256
-
-Following algorithm is part of JavaCard 3.0.5 and best performance is achieved if the card supports it:
-* Signature.ALG_HMAC_SHA_512
+* The exact list of algorithms the card must or can support is as follows.
+  * Must be supported and is part of JavaCard 3.0.5:
+    * KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY
+  * Must be supported and is part of JavaCard 3.0.4:
+    * Cipher.ALG_AES_BLOCK_128_CBC_NOPAD
+    * Cipher.ALG_AES_CBC_ISO9797_M2
+    * KeyAgreement.ALG_EC_SVDP_DH_PLAIN
+    * KeyPair.ALG_EC_FP (generation of 256-bit keys)
+    * MessageDigest.ALG_SHA_256
+    * MessageDigest.ALG_SHA_512
+    * RandomData.ALG_SECURE_RANDOM
+    * Signature.ALG_AES_MAC_128_NOPAD
+    * Signature.ALG_ECDSA_SHA_256
+  * Can be supported and is part of 3.0.5 
+    * Signature.ALG_HMAC_SHA_512 (improves performance)
+* a good resource that tracks which algorithm is supported by which card is https://www.fi.muni.cz/~xsvenda/jcalgtest/
 
 # Other related repositories
 
