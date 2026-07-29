@@ -75,7 +75,7 @@ before running the tests.
     * Signature.ALG_ECDSA_SHA_256
   * Can be supported and is part of 3.0.5 
     * Signature.ALG_HMAC_SHA_512 (improves performance)
-* a good resource that tracks which algorithm is supported by which card is https://www.fi.muni.cz/~xsvenda/jcalgtest/
+* A good resource that tracks which algorithm is supported by which card is https://www.fi.muni.cz/~xsvenda/jcalgtest/
 
 # Other related repositories
 
