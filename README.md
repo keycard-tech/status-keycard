@@ -62,11 +62,13 @@ before running the tests.
 * The class byte of the APDU is not checked since there are no conflicting INS code.
 * The GlobalPlatform ISD keys are set to 404142434445464748494a4b4c4d4e4f (GlobalPlatform default keys) or c212e073ff8b4bbfaff4de8ab655221f (Keycard development cards default keys).
 
+Following algorithm is part of JavaCard 3.0.5 and must be supported by the card. This is why we ask for JavaCard 3.0.5+ cards: it is required at installation time and there is no fallback. Some 3.0.4 cards implement it anyway and will also work.
+* KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY
+
 Following algorithms are part of JavaCard 3.0.4 and must be supported by the card:
 * Cipher.ALG_AES_BLOCK_128_CBC_NOPAD
 * Cipher.ALG_AES_CBC_ISO9797_M2
 * KeyAgreement.ALG_EC_SVDP_DH_PLAIN
-* KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY
 * KeyPair.ALG_EC_FP (generation of 256-bit keys)
 * MessageDigest.ALG_SHA_256
 * MessageDigest.ALG_SHA_512
