@@ -6,7 +6,7 @@ import javacard.security.*;
 import static javacard.framework.ISO7816.OFFSET_P2;
 
 public class CashApplet extends Applet {
-  private static final short SIGN_OUT_OFF = ISO7816.OFFSET_CDATA + MessageDigest.LENGTH_SHA_256;
+  private static final short SIGN_OUT_OFF = ISO7816.OFFSET_CDATA + (MessageDigest.LENGTH_SHA_256 * 2);
   private static final byte TLV_PUB_DATA = (byte) 0x82;
 
   private KeyPair keypair;

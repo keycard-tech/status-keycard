@@ -146,12 +146,14 @@ public class SECP256k1 {
     }
   }
 
-  short schnorrSign(Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
+  short schnorrSign(Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] tweak, short tweakOff, byte[] out, short outOff) {
     Util.arrayCopyNonAtomic(hash, hashOff, crypto.scratch, SCHNORR_HASH_OFF, (short) 32);
     hash = crypto.scratch;
     hashOff = SCHNORR_HASH_OFF;
 
     key.getS(crypto.scratch, SCHNORR_SK_OFF);
+    schnorrPrivPub(crypto, crypto.scratch, SCHNORR_SK_OFF);
+    crypto.bigMath.modAdd(crypto.scratch, SCHNORR_SK_OFF, (short) 32, tweak, tweakOff, (short) 32, SECP256K1_R, (short) 0, (short) 32);
     schnorrPrivPub(crypto, crypto.scratch, SCHNORR_SK_OFF);
     Util.arrayCopyNonAtomic(crypto.scratch, (short) (SCHNORR_PUB_OFF + 1), out, outOff, (short) 32);
 
@@ -196,12 +198,12 @@ public class SECP256k1 {
     return sigLen;
   }
 
-  short signHash(byte algo, Crypto crypto, ECPrivateKey key, byte[] hash, short hashOff, byte[] out, short outOff) {
+  short signHash(byte algo, Crypto crypto, ECPrivateKey key, byte[] data, short dataOff, byte[] out, short outOff) {
     switch(algo) {
       case SIGN_ECDSA:
-        return ecdsaSign(crypto, key, hash, hashOff, out, outOff);
+        return ecdsaSign(crypto, key, data, dataOff, out, outOff);
       case SIGN_BIP340_SCHNORR:
-        return schnorrSign(crypto, key, hash, hashOff, out, outOff);
+        return schnorrSign(crypto, key, data, dataOff, data, (short)(dataOff + MessageDigest.LENGTH_SHA_256), out, outOff);
       case SIGN_ED25519:
       case SIGN_BLS12_381:
       default:

@@ -1029,7 +1029,7 @@ public class KeycardApplet extends Applet {
 
   /**
    * Processes the SIGN command. Requires a secure channel to open and either the PIN to be verified or the PIN-less key
-   * path to be the current key path. This command supports signing  a precomputed 32-bytes hash. The signature is
+   * path to be the current key path. This command supports signing a precomputed 32-bytes hash. The signature is
    * generated using the current keys, so if no keys are loaded the command does not work. The result of the execution
    * is not the plain signature, but a TLV object containing the public key which must be used to verify the signature
    * and the signature itself. The client should use this to calculate 'v' and format the signature according to the
@@ -1049,21 +1049,23 @@ public class KeycardApplet extends Applet {
     }
 
     short len = (short) (apduBuffer[ISO7816.OFFSET_LC] & (short) 0xFF);
+    byte algo = apduBuffer[OFFSET_P2];
+    short signDataLen = (algo == SECP256k1.SIGN_BIP340_SCHNORR) ? (short) (MessageDigest.LENGTH_SHA_256 * 2) : MessageDigest.LENGTH_SHA_256;
 
-    if (len < MessageDigest.LENGTH_SHA_256) {
+    if (len < signDataLen) {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    short pathLen = (short) (len - MessageDigest.LENGTH_SHA_256);
-    updateDerivationPath(apduBuffer, MessageDigest.LENGTH_SHA_256, pathLen);
+    short pathLen = (short) (len - signDataLen);
+    updateDerivationPath(apduBuffer, signDataLen, pathLen);
 
     if (!(pin.isValidated() && masterPrivate.isInitialized())) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
 
-    doDerive(apduBuffer, MessageDigest.LENGTH_SHA_256);
+    doDerive(apduBuffer, signDataLen);
 
-    Util.arrayCopyNonAtomic(apduBuffer, OFFSET_CDATA, apduBuffer, SIGN_HASH_OFF, MessageDigest.LENGTH_SHA_256);
+    Util.arrayCopyNonAtomic(apduBuffer, OFFSET_CDATA, apduBuffer, SIGN_HASH_OFF, signDataLen);
 
     apduBuffer[OFFSET_CDATA] = TLV_SIGNATURE_TEMPLATE;
     apduBuffer[(short)(OFFSET_CDATA + 3)] = TLV_PUB_KEY;
@@ -1073,7 +1075,7 @@ public class KeycardApplet extends Applet {
 
     outLen += 5;
     short sigOff = (short) (OFFSET_CDATA + outLen);
-    outLen += secp256k1.signHash(apduBuffer[OFFSET_P2], crypto, secp256k1.tmpECPrivateKey, apduBuffer, SIGN_HASH_OFF, apduBuffer, sigOff);
+    outLen += secp256k1.signHash(algo, crypto, secp256k1.tmpECPrivateKey, apduBuffer, SIGN_HASH_OFF, apduBuffer, sigOff);
 
     apduBuffer[(short)(OFFSET_CDATA + 1)] = (byte) 0x81;
     apduBuffer[(short)(OFFSET_CDATA + 2)] = (byte) (outLen - 3);
