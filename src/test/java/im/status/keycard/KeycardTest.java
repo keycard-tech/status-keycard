@@ -914,8 +914,9 @@ public class KeycardTest {
     verifySignResp(data, response);
 
     // Sign Schnorr
+    byte[] schnorrData = Arrays.copyOf(hash, 64); // Schnorr with 0 tweak
     if (TARGET != TARGET_SIMULATOR) {
-      response = cmdSet.signWithPath(hash, derivedPath, KeycardCommandSet.SIGN_P2_BIP340_SCHNORR, false);
+      response = cmdSet.signWithPath(schnorrData, derivedPath, KeycardCommandSet.SIGN_P2_BIP340_SCHNORR, false);
       verifySchnorrSignResp(data, response);
     }
 
