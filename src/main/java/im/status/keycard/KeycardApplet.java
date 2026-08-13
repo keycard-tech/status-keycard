@@ -31,6 +31,7 @@ public class KeycardApplet extends Applet {
   static final byte INS_EXPORT_KEY = (byte) 0xC2;
   static final byte INS_EXPORT_LEE = (byte) 0xC3;
   static final byte INS_EXPORT_BIP85 = (byte) 0xC4;
+  static final byte INS_ECDH = (byte) 0xC5;
   static final byte INS_GET_DATA = (byte) 0xCA;
   static final byte INS_STORE_DATA = (byte) 0xE2;
   static final byte INS_GET_CHALLENGE = (byte) 0x84;
@@ -82,6 +83,10 @@ public class KeycardApplet extends Applet {
   static final byte EXPORT_KEY_P2_PUBLIC_ONLY = 0x01;
   static final byte EXPORT_KEY_P2_EXTENDED_PUBLIC = 0x02;
 
+  static final byte ECDH_P2_RAW_SECRET = 0x00;
+
+  static final byte UNCOMPRESSED_POINT_TAG = 0x04;
+
   static final byte STORE_DATA_P1_PUBLIC = 0x00;
   static final byte STORE_DATA_P1_NDEF = 0x01;
   static final byte STORE_DATA_P1_CASH = 0x02;
@@ -121,6 +126,7 @@ public class KeycardApplet extends Applet {
 
   static final byte[] EIP_1581_PREFIX = { (byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C, (byte) 0x80, 0x00, 0x06, 0x2D};
   static final byte[] BIP85_PREFIX = { (byte) 0x84, (byte) 0xFD, (byte) 0x1D, (byte) 0x48 };
+  static final byte[] NIP44_PREFIX = { (byte) 0x80, 0x00, 0x00, 0x2C, (byte) 0x80, 0x00, 0x04, (byte) 0xD5 };
 
   private static final byte SEED_BIP32 = 0x00;
   private static final byte SEED_LEE = 0x01;
@@ -320,6 +326,9 @@ public class KeycardApplet extends Applet {
         return;
       case INS_EXPORT_BIP85:
         exportBIP85(apdu);
+        break;
+      case INS_ECDH:
+        ecdh(apdu);
         break;
       default:
         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -1263,6 +1272,57 @@ public class KeycardApplet extends Applet {
   }
 
   /**
+   * Processes the ECDH command. Requires an open secure channel and the PIN to be verified. Computes an EC-DH
+   * key agreement between the key derived at the given path and the given peer public key, returning the
+   * x-coordinate of the resulting point (32 bytes). The data field must contain the peer public key as an
+   * uncompressed point (0x04 || X || Y, 65 bytes) followed by the derivation path (4 bytes per component,
+   * big-endian). Derivation is only permitted under the m/44'/1237' (NIP-44) and m/43'/60'/1581' (EIP-1581)
+   * prefixes, at a depth of at least 5 components; any other path is refused. The returned value is a raw
+   * shared secret, not an encryption key: protocols are expected to run it through a KDF host-side (NIP-44
+   * uses HKDF-extract with salt "nip44-v2").
+   *
+   * @param apdu the JCRE-owned APDU object.
+   */
+  private void ecdh(APDU apdu) {
+    byte[] apduBuffer = apdu.getBuffer();
+
+    if (apduBuffer[OFFSET_P1] != SIGN_P1_DERIVE || apduBuffer[OFFSET_P2] != ECDH_P2_RAW_SECRET) {
+      ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+    }
+
+    short len = (short) (apduBuffer[ISO7816.OFFSET_LC] & (short) 0xFF);
+
+    if ((len < (short) (Crypto.KEY_PUB_SIZE + 4)) || apduBuffer[OFFSET_CDATA] != UNCOMPRESSED_POINT_TAG) {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+
+    updateDerivationPath(apduBuffer, Crypto.KEY_PUB_SIZE, (short) (len - Crypto.KEY_PUB_SIZE));
+
+    if (!(pin.isValidated() && masterPrivate.isInitialized())) {
+      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+    }
+
+    if (!(isNIP44() || isEIP1581())) {
+      ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+    }
+
+    doDerive(apduBuffer, Crypto.KEY_PUB_SIZE);
+    secp256k1.tmpECPrivateKey.setS(derivationOutput, (short) 0, Crypto.KEY_SECRET_SIZE);
+
+    short outLen = 0;
+    try {
+      crypto.ecdh.init(secp256k1.tmpECPrivateKey);
+      outLen = crypto.ecdh.generateSecret(apduBuffer, OFFSET_CDATA, Crypto.KEY_PUB_SIZE, crypto.scratch, (short) 0);
+    } catch (CryptoException e) {
+      ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    }
+
+    Util.arrayCopyNonAtomic(crypto.scratch, (short) 0, apduBuffer, OFFSET_CDATA, outLen);
+
+    secureChannel.respond(apdu, outLen, ISO7816.SW_NO_ERROR);
+  }
+
+  /**
    * Processes the GET DATA command.
    *
    * @param apdu the JCRE-owned APDU object.
@@ -1390,6 +1450,10 @@ public class KeycardApplet extends Applet {
     }
 
     return true;
+  }
+
+  private boolean isNIP44() {
+    return (tmpPath[0] >= (short)(((short) NIP44_PREFIX.length) + 12)) && (Util.arrayCompare(NIP44_PREFIX, (short) 0, tmpPath, (short) 1, (short) NIP44_PREFIX.length) == 0);
   }
 
   /**
