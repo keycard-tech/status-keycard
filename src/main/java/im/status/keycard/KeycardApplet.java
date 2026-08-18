@@ -1065,12 +1065,12 @@ public class KeycardApplet extends Applet {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    short pathLen = (short) (len - signDataLen);
-    updateDerivationPath(apduBuffer, signDataLen, pathLen);
-
     if (!(pin.isValidated() && masterPrivate.isInitialized())) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
+
+    short pathLen = (short) (len - signDataLen);
+    updateDerivationPath(apduBuffer, signDataLen, pathLen);
 
     doDerive(apduBuffer, signDataLen);
 
