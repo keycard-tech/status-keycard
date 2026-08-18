@@ -457,9 +457,115 @@ public class KeycardTest {
 
     resetAndSelectAndOpenSC();
 
-    // Unblock PIN to make further tests possible
-    response = cmdSet.unblockPIN("012345678901", "024680");
-    assertEquals(0x9000, response.getSw());
+    // ---------------------------------------------------------------------
+    // Brute-force protection via cumulative wrong attempts (wrongPINCount).
+    // The duress (alt) PIN must not let an attacker brute-force the main PIN:
+    // once the cumulative wrong-attempt counter reaches the threshold, the
+    // alt PIN no longer resets the main PIN and the main PIN stays blocked.
+    //
+    // Note: after the alt PIN has been used once, the active PIN becomes the
+    // alt PIN, so the SW codes returned by wrong attempts reflect the *alt*
+    // PIN counter, not the main one. We therefore only assert that wrong
+    // attempts are rejected (0x63xx) and that the correct main PIN is
+    // eventually permanently blocked (rejected) after the attack.
+    // ---------------------------------------------------------------------
+    if (cmdSet.getApplicationInfo().hasFactoryResetCapability()) {
+      // Factory reset and re-init to start from a known, clean state.
+      response = cmdSet.factoryReset();
+      assertEquals(0x9000, response.getSw());
+      cmdSet.select().checkOK();
+      initCard(cmdSet);
+      cmdSet.autoOpenSecureChannel();
+
+      // Control, below the cumulative-wrong-attempt threshold: a wrong guess
+      // followed by the alt PIN leaves the main PIN usable.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00); // rejected
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());          // alt accepted
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x9000, response.getSw());          // main still usable
+
+      // Attack: alternate wrong main guesses and alt-PIN resets. The
+      // cumulative wrong-attempt counter climbs and, once it passes the
+      // threshold, the alt PIN can no longer reset the main PIN.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      response = cmdSet.verifyPIN("222222");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      response = cmdSet.verifyPIN("333333");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      // The correct main PIN is now permanently blocked: the alt PIN was
+      // unable to reset it, so the main PIN cannot be brute-forced. (With the
+      // old, vulnerable behaviour the last alt-PIN use would have reset the
+      // main PIN and this would have returned 0x9000.)
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // -------------------------------------------------------------------
+      // UNBLOCK PIN must not provide a work-around. An attacker who knows the
+      // alt PIN (but not the PUK) can use it to swap the PUK for one they
+      // know, but they remain locked into the "alt PIN" ecosystem: the active
+      // PIN is the alt PIN. UNBLOCK PIN must only reset the active (alt) PIN
+      // and must NOT reset the main PIN nor the cumulative wrong-attempt
+      // counter, so the main PIN stays permanently blocked.
+      // -------------------------------------------------------------------
+
+      // Re-authenticate with the alt PIN so the PUK can be changed (the wrong
+      // attempt above cleared the validated flag).
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      // The attacker swaps the PUK for one they know.
+      response = cmdSet.changePIN(KeycardApplet.CHANGE_PIN_P1_PUK, "210987654321");
+      assertEquals(0x9000, response.getSw());
+
+      // Block the active (alt) PIN so that UNBLOCK PIN is permitted.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("222222");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("333333");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // Unblock with the attacker-known PUK. This resets the alt PIN only.
+      response = cmdSet.unblockPIN("210987654321", "135790");
+      assertEquals(0x9000, response.getSw());
+
+      // UNBLOCK PIN did NOT resetAndUnblock the main PIN: the correct main
+      // PIN is still rejected.
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // UNBLOCK PIN did NOT reset the cumulative wrong-attempt counter: using
+      // the (new) alt PIN again still cannot reset the main PIN, so the main
+      // PIN remains permanently blocked.
+      response = cmdSet.verifyPIN("135790");
+      assertEquals(0x9000, response.getSw());
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // Leave the card in a clean, initialized state for subsequent tests.
+      response = cmdSet.factoryReset();
+      assertEquals(0x9000, response.getSw());
+      cmdSet.select().checkOK();
+      initCard(cmdSet);
+      cmdSet.autoOpenSecureChannel();
+    } else {
+      // Fallback (cards without the factory-reset capability): unblock the
+      // main PIN so subsequent tests (and tearDown) can proceed.
+      response = cmdSet.unblockPIN("012345678901", "000000");
+      assertEquals(0x9000, response.getSw());
+    }
   }
 
   @Test
