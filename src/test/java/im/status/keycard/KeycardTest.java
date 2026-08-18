@@ -457,9 +457,85 @@ public class KeycardTest {
 
     resetAndSelectAndOpenSC();
 
-    // Unblock PIN to make further tests possible
-    response = cmdSet.unblockPIN("012345678901", "024680");
-    assertEquals(0x9000, response.getSw());
+    if (cmdSet.getApplicationInfo().hasFactoryResetCapability()) {
+      // Factory reset and re-init to start from a known, clean state.
+      response = cmdSet.factoryReset();
+      assertEquals(0x9000, response.getSw());
+      cmdSet.select().checkOK();
+      initCard(cmdSet);
+      cmdSet.autoOpenSecureChannel();
+
+      // Control, below the cumulative-wrong-attempt threshold: a wrong guess
+      // followed by the alt PIN leaves the main PIN usable.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00); // rejected
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());          // alt accepted
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x9000, response.getSw());          // main still usable
+
+      // Attack: alternate wrong main guesses and alt-PIN resets.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      response = cmdSet.verifyPIN("222222");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      response = cmdSet.verifyPIN("333333");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // Re-authenticate with the alt PIN so the PUK can be changed (the wrong
+      // attempt above cleared the validated flag).
+      response = cmdSet.verifyPIN("024680");
+      assertEquals(0x9000, response.getSw());
+
+      // The attacker swaps the PUK for one they know.
+      response = cmdSet.changePIN(KeycardApplet.CHANGE_PIN_P1_PUK, "210987654321");
+      assertEquals(0x9000, response.getSw());
+
+      // Block the active (alt) PIN so that UNBLOCK PIN is permitted.
+      response = cmdSet.verifyPIN("111111");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("222222");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+      response = cmdSet.verifyPIN("333333");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // Unblock with the attacker-known PUK. This resets the alt PIN only.
+      response = cmdSet.unblockPIN("210987654321", "135790");
+      assertEquals(0x9000, response.getSw());
+
+      // UNBLOCK PIN did NOT resetAndUnblock the main PIN: the correct main
+      // PIN is still rejected.
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      response = cmdSet.verifyPIN("135790");
+      assertEquals(0x9000, response.getSw());
+      response = cmdSet.verifyPIN("000000");
+      assertEquals(0x6300, response.getSw() & 0xFF00);
+
+      // Leave the card in a clean, initialized state for subsequent tests.
+      response = cmdSet.factoryReset();
+      assertEquals(0x9000, response.getSw());
+      cmdSet.select().checkOK();
+      initCard(cmdSet);
+      cmdSet.autoOpenSecureChannel();
+    } else {
+      // Fallback (cards without the factory-reset capability): unblock the
+      // main PIN so subsequent tests (and tearDown) can proceed.
+      response = cmdSet.unblockPIN("012345678901", "000000");
+      assertEquals(0x9000, response.getSw());
+    }
   }
 
   @Test

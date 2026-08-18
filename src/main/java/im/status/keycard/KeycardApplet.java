@@ -132,9 +132,11 @@ public class KeycardApplet extends Applet {
   private static final byte SEED_LEE = 0x01;
 
   private OwnerPIN pin;
+  private OwnerPIN sentinelPIN;
   private OwnerPIN mainPIN;
   private OwnerPIN altPIN;
   private OwnerPIN puk;
+
   private SecureChannelV2 secureChannel;
 
   private ECPublicKey masterPublic;
@@ -394,6 +396,10 @@ public class KeycardApplet extends Applet {
     puk = new OwnerPIN(pukLimit, PUK_LENGTH);
     puk.update(apduBuffer, (short)(OFFSET_CDATA + PIN_LENGTH), PUK_LENGTH);
 
+    // This PIN must never verify succesfully, initialize with any alphabetic value (valid PINs are all digits)
+    sentinelPIN = new OwnerPIN(pinLimit, PIN_LENGTH);
+    sentinelPIN.update(Crypto.KEY_LEE_PRIV_SEED, (short) 0, pinLimit);
+
     pin = mainPIN;
 
     secureChannel.respond(apdu, (short) 0, ISO7816.SW_NO_ERROR);
@@ -525,26 +531,19 @@ public class KeycardApplet extends Applet {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    short resp = mainPIN.check(apduBuffer, ISO7816.OFFSET_CDATA, len) ? (short) 1 : (short) 0;
-    resp += altPIN.check(apduBuffer, ISO7816.OFFSET_CDATA, len) ? (short) 2 : (short) 0;
-
-    switch(resp) {
-      case 0:
-        ISOException.throwIt((short)((short) 0x63c0 | (short) pin.getTriesRemaining()));
-        break;
-      case 1:
-        chainCode = masterChainCode;
-        leeChainCode = leeMasterChainCode;
-        altPIN.resetAndUnblock();
-        pin = mainPIN;
-        break;
-      case 2:
-      case 3: // if pins are equal alt pin takes precedence
-        chainCode = altChainCode;
-        leeChainCode = altChainCode;
-        mainPIN.resetAndUnblock();
-        pin = altPIN;
-        break;
+    if (altPIN.check(apduBuffer, ISO7816.OFFSET_CDATA, len)) { 
+      sentinelPIN.check(apduBuffer, ISO7816.OFFSET_CDATA, len); 
+      sentinelPIN.resetAndUnblock(); 
+      chainCode = altChainCode;  
+      leeChainCode = altChainCode;      
+      pin = altPIN; 
+    } else if (mainPIN.check(apduBuffer, ISO7816.OFFSET_CDATA, len)) { 
+      altPIN.resetAndUnblock();
+      chainCode = masterChainCode; 
+      leeChainCode = leeMasterChainCode; 
+      pin = mainPIN;
+    } else {
+      ISOException.throwIt((short)((short) 0x63c0 | (short) pin.getTriesRemaining()));
     }
   }
 
@@ -627,8 +626,7 @@ public class KeycardApplet extends Applet {
       ISOException.throwIt((short)((short) 0x63c0 | (short) puk.getTriesRemaining()));
     }
 
-    altPIN.resetAndUnblock();
-    mainPIN.resetAndUnblock();
+    pin.resetAndUnblock();
     pin.update(apduBuffer, (short)(ISO7816.OFFSET_CDATA + PUK_LENGTH), PIN_LENGTH);
     pin.check(apduBuffer, (short)(ISO7816.OFFSET_CDATA + PUK_LENGTH), PIN_LENGTH);
     puk.reset();
@@ -989,6 +987,7 @@ public class KeycardApplet extends Applet {
     pin = null;
     mainPIN = null;
     altPIN = null;
+    sentinelPIN = null;
     puk = null;
     secureChannel.reset();
     Util.arrayFillNonAtomic(data, (short) 0, (short) data.length, (byte) 0);
