@@ -1296,11 +1296,11 @@ public class KeycardApplet extends Applet {
       ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     }
 
-    updateDerivationPath(apduBuffer, Crypto.KEY_PUB_SIZE, (short) (len - Crypto.KEY_PUB_SIZE));
-
     if (!(pin.isValidated() && masterPrivate.isInitialized())) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
+
+    updateDerivationPath(apduBuffer, Crypto.KEY_PUB_SIZE, (short) (len - Crypto.KEY_PUB_SIZE));
 
     if (!(isNIP44() || isEIP1581())) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
