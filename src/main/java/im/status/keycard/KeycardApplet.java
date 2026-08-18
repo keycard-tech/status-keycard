@@ -137,7 +137,7 @@ public class KeycardApplet extends Applet {
   private OwnerPIN altPIN;
   private OwnerPIN puk;
   private byte wrongPINCount;
-  private byte wrongPINCountAlt;
+  byte wrongPINCountAlt;
 
   private SecureChannelV2 secureChannel;
 
@@ -540,11 +540,12 @@ public class KeycardApplet extends Applet {
 
     OwnerPIN unblockPIN;
 
+    // Balance flash writes
     if (wrongPINCount < 0x7f) {
       wrongPINCount++;
+    } {
+      wrongPINCountAlt++;
     }
-
-    wrongPINCountAlt = PIN_MAX_RETRIES;
 
     if (wrongPINCount < sentinelPIN.getTriesRemaining()) {
       unblockPIN = mainPIN;
