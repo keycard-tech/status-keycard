@@ -40,6 +40,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.*;
 
+import org.bouncycastle.jce.interfaces.ECPrivateKey;
 import org.bouncycastle.jce.interfaces.ECPublicKey;
 
 import java.util.Arrays;
@@ -1075,7 +1076,81 @@ public class KeycardTest {
     response = cmdSet.exportBIP85(64, new KeyPath("m/83696968'/0'/0'").getData());
     assertEquals(0x9000, response.getSw());
     assertArrayEquals(expectedData, response.getData());
-  }  
+  }
+
+  @Test
+  @DisplayName("ECDH")
+  void ecdhTest() throws Exception {
+    APDUResponse response;
+    String nip44Path = "m/44'/1237'/0'/0/0";
+    String eip1581Path = "m/43'/60'/1581'/0'/0";
+    ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
+    byte[] goodPoint = ecSpec.getG().getEncoded(false);
+    byte[] goodPath = new KeyPath(nip44Path).getData();
+    byte[] goodData = cat(goodPoint, goodPath);
+
+    // Security condition violation: SecureChannel not open
+    assertEquals(0x6985, ecdhWithPath(nip44Path).getSw());
+
+    cmdSet.autoOpenSecureChannel();
+
+    // Security condition violation: PIN not verified
+    assertEquals(0x6985, ecdhWithPath(nip44Path).getSw());
+
+    response = cmdSet.verifyPIN("000000");
+    assertEquals(0x9000, response.getSw());
+
+    // wrong P1 / wrong P2
+    assertEquals(0x6B00, cmdSet.ecdh(0, 0, goodData).getSw());
+    assertEquals(0x6B00, cmdSet.ecdh(KeycardApplet.SIGN_P1_DERIVE, 1, goodData).getSw());
+
+    response = cmdSet.loadKey(new BIP32KeyPair(Hex.decode("3f15e5d852dc2e9ba5e9fe189a8dd2e1547badef5b563bbe6579fc6807d80ed9"), Hex.decode("1b67969d1ec69bdfeeae43213da8460ba34b92d0788c8f7bfcfa44906e8a589c"), null));
+    assertEquals(0x9000, response.getSw());
+
+    assertEcdhAgrees(nip44Path);   // NIP-44 branch
+    assertEcdhAgrees(eip1581Path); // EIP-1581 branch
+
+    // pinned vector: fixed master (repo test key), peer priv = 2, path m/44'/1237'/0'/0/0.
+    // expected value computed with an independent implementation
+    byte[] fixedPeerPub = Hex.decode("04c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a");
+    response = cmdSet.ecdh(cat(fixedPeerPub, new KeyPath(nip44Path).getData()));
+    assertEquals(0x9000, response.getSw());
+    assertArrayEquals(Hex.decode("61a56a403a5be9a83ae4ba33d580611db5a57586f999a134daba516929905ec6"), response.getData());
+    // pinned vector, EIP-1581 branch: same master + peer, path m/43'/60'/1581'/0'/0
+    response = cmdSet.ecdh(cat(fixedPeerPub, new KeyPath(eip1581Path).getData()));
+    assertEquals(0x9000, response.getSw());
+    assertArrayEquals(Hex.decode("513fbb10f54297573f05085f9f80b7d8418c4f6805960051667916b45c68e6d4"), response.getData());
+
+    // rejected: wallet branch
+    assertEquals(0x6985, ecdhWithPath("m/44'/60'/0'/0/0").getSw());
+
+    // rejected: allowed prefixes but one level short
+    assertEquals(0x6985, ecdhWithPath("m/44'/1237'/0'/0").getSw());
+    assertEquals(0x6985, ecdhWithPath("m/43'/60'/1581'/0'").getSw());
+
+    // ------ malformed input ------
+    // truncated point: leading 0x04 survives, surplus path byte breaks the %4 alignment
+    assertEquals(0x6A80, cmdSet.ecdh(cat(Arrays.copyOf(goodPoint, 64), goodPath)).getSw());
+
+    // prefix not 0x04
+    byte[] badPrefix = goodPoint.clone();
+    badPrefix[0] = 0x02;
+    assertEquals(0x6A80, cmdSet.ecdh(cat(badPrefix, goodPath)).getSw());
+
+    // point not on the curve
+    byte[] offCurve = goodPoint.clone();
+    offCurve[64] ^= 1;
+    assertEquals(0x6A80, cmdSet.ecdh(cat(offCurve, goodPath)).getSw());
+
+    // path length not a multiple of 4
+    assertEquals(0x6A80, cmdSet.ecdh(cat(goodPoint, Arrays.copyOf(goodPath, 19))).getSw());
+
+    // point only, no path
+    assertEquals(0x6A80, cmdSet.ecdh(goodPoint).getSw());
+
+    // path deeper than KEY_PATH_MAX_DEPTH (11 levels, raw — SDK's KeyPath refuses to build this)
+    assertEquals(0x6A80, cmdSet.ecdh(cat(goodPoint, new byte[44])).getSw());
+  }
 
   @Test
   @DisplayName("STORE/GET DATA")
@@ -1534,5 +1609,55 @@ public class KeycardTest {
 
   private void verifyKeyUID(byte[] keyUID, byte[] pubKey) {
     assertArrayEquals(sha256(pubKey), keyUID);
+  }
+
+  private APDUResponse ecdhWithPath(String keyPath) throws Exception {
+    byte[] path = new KeyPath(keyPath).getData();
+
+    KeyPair peer = keypairGenerator().generateKeyPair();
+    byte[] peerPub = ((ECPublicKey) peer.getPublic()).getQ().getEncoded(false);
+
+    byte[] data = new byte[peerPub.length + path.length];
+    System.arraycopy(peerPub, 0, data, 0, peerPub.length);
+    System.arraycopy(path, 0, data, peerPub.length, path.length);
+
+    return cmdSet.ecdh(data);
+  }
+
+  private void assertEcdhAgrees(String keyPath) throws Exception {
+    APDUResponse response;
+
+    byte[] path = new KeyPath(keyPath).getData();
+
+    // A: card's public key at that path
+    response = cmdSet.exportKey(path, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
+    assertEquals(0x9000, response.getSw());
+    byte[] cardPub = BIP32KeyPair.fromTLV(response.getData()).getPublicKey();
+
+    // B: host keypair
+    KeyPair peer = keypairGenerator().generateKeyPair();
+    BigInteger peerPriv = ((ECPrivateKey) peer.getPrivate()).getD();
+    byte[] peerPub = ((ECPublicKey) peer.getPublic()).getQ().getEncoded(false);
+
+    // card side: A_priv x B_pub
+    byte[] data = new byte[peerPub.length + path.length];
+    System.arraycopy(peerPub, 0, data, 0, peerPub.length);
+    System.arraycopy(path, 0, data, peerPub.length, path.length);
+
+    response = cmdSet.ecdh(data);
+    assertEquals(0x9000, response.getSw());
+
+    // host side: B_priv x A_pub
+    ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
+    byte[] expected = ecSpec.getCurve().decodePoint(cardPub).multiply(peerPriv).normalize().getAffineXCoord().getEncoded();
+
+    assertArrayEquals(expected, response.getData());
+  }
+
+  private byte[] cat(byte[] a, byte[] b) {
+    byte[] out = new byte[a.length + b.length];
+    System.arraycopy(a, 0, out, 0, a.length);
+    System.arraycopy(b, 0, out, a.length, b.length);
+    return out;
   }
 }
