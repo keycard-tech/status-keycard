@@ -1129,7 +1129,7 @@ public class KeycardApplet extends Applet {
 
     boolean eip1581 = isEIP1581();
 
-    if (!(publicOnly || eip1581) || (extendedPublic && eip1581)) {
+    if (!(publicOnly || eip1581) || (extendedPublic && (eip1581 || isMaster()))) {
       ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
     }
 
@@ -1431,6 +1431,10 @@ public class KeycardApplet extends Applet {
 
   private boolean isEIP1581() {
     return (tmpPath[0] >= (short)(((short) EIP_1581_PREFIX.length) + 8)) && (Util.arrayCompare(EIP_1581_PREFIX, (short) 0, tmpPath, (short) 1, (short) EIP_1581_PREFIX.length) == 0);   
+  }
+
+  private boolean isMaster() {
+    return tmpPath[0] == 0;   
   }
 
   private boolean isBIP85Path() {
