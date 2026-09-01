@@ -1110,9 +1110,11 @@ public class KeycardTest {
   @DisplayName("LEE Keys")
   void leeKeysTest() throws Exception {
     byte[] seed = Mnemonic.toBinarySeed("fan empower output between game genius forest bulk party small arm shuffle", "");
-    byte[] expectedPublic = Hex.decode("045bdbe46824409ae66c960f4a204ac66adc1646dcfa56a5b455629f99b95a643012390c799fb8a1f5e9140dfe9f6088ab1ded90f496c9d8832df501e3c8e9c45f");
-    byte[] expectedNsk = Hex.decode("a44386392e2112c8c46a7f8378b4c3163011a76664a2b1d23e25a6f35ef90739");
-    byte[] expectedVsk = Hex.decode("d06cc239011a56c8aecec0579b884227d637496a6e3e8f27d70e170f2ec3fa0d97dc323114bb420ef3061010446a9b4cf321ebc895ac8b7f261e3fbcaef79a67");
+    byte[] expectedPublic = Hex.decode("0423134cb96d1f5ec2ec023c6462317eee077f54730b14911b2eca0f0474b42688339128c030ad646c818bb2779d2901f758a527be9b849760f8191c72cdcecf9d");
+    byte[] expectedAsk = Hex.decode("7b9530590b74199ec623fd74bedc5b981c8eb36205f9981980f80c7cefc99d7d");
+    byte[] expectedNsk = Hex.decode("ef2b7994d905e72109f60de69ee212f82ed3b99d261916671337a8b744f7a515");
+    byte[] expectedVskD = Hex.decode("9bbdfc6def553c24cd50755f8c45e120a2210e66f8a3d2d2487d591158fe7439");
+    byte[] expectedVskZ = Hex.decode("bfabaa3ab7f9537b11035f6f1d31a3e9d2e85249f7e42e3053386c0b14b1384e");
 
     cmdSet.autoOpenSecureChannel();
     APDUResponse response = cmdSet.verifyPIN("000000");
@@ -1131,8 +1133,10 @@ public class KeycardTest {
       assertEquals(0x9000, response.getSw());
       TinyBERTLV tlvReader = new TinyBERTLV(response.getData());
       tlvReader.enterConstructed(KeycardApplet.TLV_KEY_TEMPLATE);
+      assertArrayEquals(expectedAsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_ASK));
       assertArrayEquals(expectedNsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_NSK));
-      assertArrayEquals(expectedVsk, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK));      
+      assertArrayEquals(expectedVskD, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK_D));
+      assertArrayEquals(expectedVskZ, tlvReader.readPrimitive(KeycardApplet.TLV_LEE_VSK_Z));
     }
   }
 
