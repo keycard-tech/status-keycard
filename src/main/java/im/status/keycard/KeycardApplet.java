@@ -101,7 +101,9 @@ public class KeycardApplet extends Applet {
   static final byte TLV_PRIV_KEY = (byte) 0x81;
   static final byte TLV_CHAIN_CODE = (byte) 0x82;
   static final byte TLV_LEE_NSK = (byte) 0x83;
-  static final byte TLV_LEE_VSK = (byte) 0x84;
+  static final byte TLV_LEE_ASK = (byte) 0x84;
+  static final byte TLV_LEE_VSK_D = (byte) 0x85;
+  static final byte TLV_LEE_VSK_Z = (byte) 0x86;
 
   static final byte TLV_APPLICATION_STATUS_TEMPLATE = (byte) 0xA3;
   static final byte TLV_INT = (byte) 0x02;
@@ -205,8 +207,8 @@ public class KeycardApplet extends Applet {
     resetCurveParameters();
 
     // BIP32: secret_key (32) + chain_code (32) = 64
-    // LEE:   NSK (32) + VSK (64) = 96
-    derivationOutput = JCSystem.makeTransientByteArray((short) (Crypto.KEY_SECRET_SIZE + Crypto.LEE_VSK_SIZE), JCSystem.CLEAR_ON_DESELECT);
+    // LEE private keys: ASK (32) + NSK (32) + VSK_D (32) + VSK_Z (32) = 128
+    derivationOutput = JCSystem.makeTransientByteArray((short) (4 * Crypto.KEY_SECRET_SIZE), JCSystem.CLEAR_ON_DESELECT);
 
     data = new byte[(short)(MAX_DATA_LENGTH + 1)];
 
@@ -1195,13 +1197,15 @@ public class KeycardApplet extends Applet {
     apduBuffer[(short)(Crypto.KEY_SECRET_SIZE + 2)] = 0;
     apduBuffer[(short)(Crypto.KEY_SECRET_SIZE + 3)] = 0;
 
-    crypto.leeDeriveNSK(apduBuffer, Crypto.KEY_SECRET_SIZE, apduBuffer, (short) 0, derivationOutput, (short) 0);
-    crypto.leeDeriveVSK(apduBuffer, Crypto.KEY_SECRET_SIZE, apduBuffer, (short) 0, derivationOutput, Crypto.KEY_SECRET_SIZE);
+    // Master (index 0): derive ASK, NSK, VSK_D, VSK_Z from the master SSK
+    crypto.leeDeriveASK(apduBuffer, Crypto.KEY_SECRET_SIZE, apduBuffer, (short) 0, derivationOutput, (short) 0);
+    crypto.leeDeriveNSK(derivationOutput, (short) 0, derivationOutput, Crypto.KEY_SECRET_SIZE);
+    crypto.leeDeriveVSK(apduBuffer, Crypto.KEY_SECRET_SIZE, apduBuffer, (short) 0, derivationOutput, (short) (2 * Crypto.KEY_SECRET_SIZE), derivationOutput, (short) (3 * Crypto.KEY_SECRET_SIZE));
 
     Util.arrayCopyNonAtomic(leeChainCode, (short) 0, apduBuffer, (short) 0, CHAIN_CODE_SIZE);
 
     for (short i = 1; i < tmpPath[0]; i += 4) {
-      if (!crypto.leeDeriveChild(tmpPath, i, derivationOutput, (short) 0, derivationOutput, Crypto.KEY_SECRET_SIZE, apduBuffer, (short) 0)) {
+      if (!crypto.leeDeriveChild(tmpPath, i, derivationOutput, (short) 0, derivationOutput, Crypto.KEY_SECRET_SIZE, derivationOutput, (short) (2 * Crypto.KEY_SECRET_SIZE), derivationOutput, (short) (3 * Crypto.KEY_SECRET_SIZE), apduBuffer, (short) 0)) {
         ISOException.throwIt(ISO7816.SW_DATA_INVALID);
       }
     }
@@ -1209,11 +1213,11 @@ public class KeycardApplet extends Applet {
     short off = OFFSET_CDATA;
 
     apduBuffer[off++] = TLV_KEY_TEMPLATE;
-    off++;
+    off += 2;
 
     short len;
 
-    apduBuffer[off++] = TLV_LEE_NSK;
+    apduBuffer[off++] = TLV_LEE_ASK;
     off++;
 
     Util.arrayCopyNonAtomic(derivationOutput, (short) 0, apduBuffer, off, Crypto.KEY_SECRET_SIZE);
@@ -1222,17 +1226,36 @@ public class KeycardApplet extends Applet {
     apduBuffer[(short) (off - 1)] = (byte) len;
     off += len;
 
-    apduBuffer[off++] = TLV_LEE_VSK;
+    apduBuffer[off++] = TLV_LEE_NSK;
     off++;
 
-    Util.arrayCopyNonAtomic(derivationOutput, Crypto.KEY_SECRET_SIZE, apduBuffer, off, Crypto.LEE_VSK_SIZE);
-    len = Crypto.LEE_VSK_SIZE;
+    Util.arrayCopyNonAtomic(derivationOutput, Crypto.KEY_SECRET_SIZE, apduBuffer, off, Crypto.KEY_SECRET_SIZE);
+    len = Crypto.KEY_SECRET_SIZE;
+
+    apduBuffer[(short) (off - 1)] = (byte) len;
+    off += len;
+
+    apduBuffer[off++] = TLV_LEE_VSK_D;
+    off++;
+
+    Util.arrayCopyNonAtomic(derivationOutput, (short) (2 * Crypto.KEY_SECRET_SIZE), apduBuffer, off, Crypto.KEY_SECRET_SIZE);
+    len = Crypto.KEY_SECRET_SIZE;
+
+    apduBuffer[(short) (off - 1)] = (byte) len;
+    off += len;
+
+    apduBuffer[off++] = TLV_LEE_VSK_Z;
+    off++;
+
+    Util.arrayCopyNonAtomic(derivationOutput, (short) (3 * Crypto.KEY_SECRET_SIZE), apduBuffer, off, Crypto.KEY_SECRET_SIZE);
+    len = Crypto.KEY_SECRET_SIZE;
 
     apduBuffer[(short) (off - 1)] = (byte) len;
     off += len;
 
     len = (short) (off - OFFSET_CDATA);
-    apduBuffer[(OFFSET_CDATA + 1)] = (byte) (len - 2);
+    apduBuffer[(short)(OFFSET_CDATA + 1)] = (byte) 0x81;
+    apduBuffer[(short)(OFFSET_CDATA + 2)] = (byte) (len - 3);
 
     secureChannel.respond(apdu, len, ISO7816.SW_NO_ERROR);
   }
