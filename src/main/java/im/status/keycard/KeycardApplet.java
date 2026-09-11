@@ -389,11 +389,7 @@ public class KeycardApplet extends Applet {
     mainPIN.update(apduBuffer, OFFSET_CDATA, PIN_LENGTH);
 
     altPIN = new OwnerPIN(pinLimit, PIN_LENGTH);
-    if (altPinOff == (short)(OFFSET_CDATA + PIN_LENGTH)) {
-      altPIN.update(apduBuffer, OFFSET_CDATA, PIN_LENGTH);
-    } else {
-      altPIN.update(apduBuffer, altPinOff, PIN_LENGTH);
-    }
+    altPIN.update(apduBuffer, altPinOff, PIN_LENGTH);
 
     puk = new OwnerPIN(pukLimit, PUK_LENGTH);
     puk.update(apduBuffer, (short)(OFFSET_CDATA + PIN_LENGTH), PUK_LENGTH);
