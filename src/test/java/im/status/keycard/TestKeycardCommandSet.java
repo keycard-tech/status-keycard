@@ -93,37 +93,4 @@ public class TestKeycardCommandSet extends KeycardCommandSet {
     byte[] publicKey = ((org.bouncycastle.jce.interfaces.ECPublicKey) kp.getPublic()).getQ().getEncoded(true);
     return openSecureChannel(publicKey);
   }
-
-  /**
-   * Sends a raw GET DATA APDU with the given P1 (data type) and P2 (offset) parameters.
-   * This is needed because the SDK does not support segmented GET DATA for NDEF.
-   *
-   * @param p1 the data type (e.g. STORE_DATA_P1_NDEF = 0x01)
-   * @param p2 the byte offset into the data
-   * @return the raw card response
-   * @throws IOException communication error
-   */
-  public APDUResponse getDataRaw(byte p1, byte p2) throws IOException {
-    return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_GET_DATA, p1, p2, new byte[0]));
-  }
-
-  /**
-   * Exports derived secret material from the BIP85 subtree.
-   * 
-   * @param p1 length of desired output
-   * @param data the derivation path
-   * @return
-   * @throws IOException
-   */
-  public APDUResponse exportBIP85(int p1, byte[] data) throws IOException {
-    return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_EXPORT_BIP85, p1, 0, data));
-  }
-
-  public APDUResponse ecdh(int p1, int p2, byte[] data) throws IOException {
-    return this.getSecureChannel().transmit(channel, this.getSecureChannel().protectedCommand(0x80, KeycardApplet.INS_ECDH, p1, p2, data));
-  }
-
-  public APDUResponse ecdh(byte[] data) throws IOException {
-    return ecdh(KeycardApplet.SIGN_P1_DERIVE, KeycardApplet.ECDH_P2_RAW_SECRET, data);
-  }
 }

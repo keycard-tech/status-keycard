@@ -1370,22 +1370,22 @@ public class KeycardTest {
     int maxChunk = (SecureChannelV2.SC_MAX_RESPONSE_LENGTH / 4) * 4;
 
     // Verify individual segment boundaries
-    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) 0);
+    response = cmdSet.getData(KeycardApplet.STORE_DATA_P1_NDEF, (byte) 0);
     assertEquals(0x9000, response.getSw());
     assertEquals(maxChunk, response.getData().length, "First segment should be max size");
 
-    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) (maxChunk / 4));
+    response = cmdSet.getData(KeycardApplet.STORE_DATA_P1_NDEF, maxChunk);
     assertEquals(0x9000, response.getSw());
     assertEquals(maxChunk, response.getData().length, "Second segment should be max size");
 
     // Last segment
     int lastOffset = (short) (maxChunk * 2);
-    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) (lastOffset / 4));
+    response = cmdSet.getData(KeycardApplet.STORE_DATA_P1_NDEF, lastOffset);
     assertEquals(0x9000, response.getSw());
     assertEquals(totalLen - lastOffset, response.getData().length, "Last segment size mismatch");
 
     // Offset beyond data fails empty
-    response = cmdSet.getDataRaw(KeycardApplet.STORE_DATA_P1_NDEF, (byte) ((totalLen + 3) / 4));
+    response = cmdSet.getData(KeycardApplet.STORE_DATA_P1_NDEF, ((totalLen + 3) / 4) * 4);
     assertEquals(0x6A86, response.getSw());
   }
 
