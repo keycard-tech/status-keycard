@@ -239,6 +239,7 @@ public class KeycardTest {
     APDUResponse response = cmdSet.select();
     assertEquals(0x9000, response.getSw());
     byte[] data = response.getData();
+    verifyTemplateLength(data);
     assertTrue(new ApplicationInfo(data).isInitializedCard());
   }
 
@@ -830,6 +831,7 @@ public class KeycardTest {
 
     response = cmdSet.select();
     assertEquals(0x9000, response.getSw());
+    verifyTemplateLength(response.getData());
     ApplicationInfo info = new ApplicationInfo(response.getData());
     verifyKeyUID(info.getKeyUID(), (ECPublicKey) keyPair.getPublic());
 
@@ -852,6 +854,7 @@ public class KeycardTest {
 
     response = cmdSet.select();
     assertEquals(0x9000, response.getSw());
+    verifyTemplateLength(response.getData());
     info = new ApplicationInfo(response.getData());
     assertEquals(0, info.getKeyUID().length);
   }
@@ -1689,6 +1692,11 @@ public class KeycardTest {
 
   private void verifyKeyUID(byte[] keyUID, byte[] pubKey) {
     assertArrayEquals(sha256(pubKey), keyUID);
+  }
+
+  private void verifyTemplateLength(byte[] data) {
+    int lenOff = (data[1] == (byte) 0x81) ? 2 : 1;
+    assertEquals(data.length - lenOff - 1, data[lenOff] & 0xff);
   }
 
   private APDUResponse ecdhWithPath(String keyPath) throws Exception {
