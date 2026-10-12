@@ -468,7 +468,7 @@ public class KeycardApplet extends Applet {
     Util.arrayCopyNonAtomic(SharedMemory.idCert, (short) 1, apduBuffer, off, SharedMemory.CERT_LEN);
     off += SharedMemory.CERT_LEN;
 
-    apduBuffer[lenoff] = (byte)(off - lenoff - 2);
+    apduBuffer[lenoff] = (byte)(off - lenoff - 1);
     apdu.setOutgoingAndSend((short) 0, off);
   }
 
