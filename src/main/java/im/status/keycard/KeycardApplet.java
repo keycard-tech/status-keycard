@@ -826,7 +826,11 @@ public class KeycardApplet extends Applet {
 
     if (tmpPath[0] == 0) {
       masterPrivate.getS(derivationOutput, (short) 0);
-      return;
+
+      // in LEE mode we can't take this shortcut
+      if (!lee) {
+        return;
+      }
     }
 
     short scratchOff = (short) (ISO7816.OFFSET_CDATA + off);

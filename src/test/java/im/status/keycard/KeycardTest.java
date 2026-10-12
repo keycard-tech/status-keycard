@@ -1022,11 +1022,19 @@ public class KeycardTest {
   }
 
   private void verifySignResp(byte[] data, APDUResponse response) throws Exception {
+    verifySignResp(data, response, null);
+  }
+
+  private void verifySignResp(byte[] data, APDUResponse response, byte[] expectedPublicKey) throws Exception {
     Signature signature = Signature.getInstance("SHA256withECDSA", "BC");
     assertEquals(0x9000, response.getSw());
     byte[] sig = response.getData();
     byte[] keyData = extractPublicKeyFromSignature(sig);
     sig = extractSignature(sig);
+
+    if (expectedPublicKey != null) {
+      assertArrayEquals(expectedPublicKey, keyData);
+    }
 
     ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
     ECPublicKeySpec cardKeySpec = new ECPublicKeySpec(ecSpec.getCurve().decodePoint(keyData), ecSpec);
@@ -1114,6 +1122,7 @@ public class KeycardTest {
   void leeKeysTest() throws Exception {
     byte[] seed = Mnemonic.toBinarySeed("fan empower output between game genius forest bulk party small arm shuffle", "");
     byte[] expectedPublic = Hex.decode("0423134cb96d1f5ec2ec023c6462317eee077f54730b14911b2eca0f0474b42688339128c030ad646c818bb2779d2901f758a527be9b849760f8191c72cdcecf9d");
+    byte[] expectedRootPublic = Hex.decode("046733511e2024181084f36d900855d5a441041f67200cf1fe7019fe285522d9e14f3a47e230a1cb8602e802c7f33c34a495fb6fceec3fc7bdf4d8a8b4d98c9e05");
     byte[] expectedAsk = Hex.decode("7b9530590b74199ec623fd74bedc5b981c8eb36205f9981980f80c7cefc99d7d");
     byte[] expectedNsk = Hex.decode("ef2b7994d905e72109f60de69ee212f82ed3b99d261916671337a8b744f7a515");
     byte[] expectedVskD = Hex.decode("9bbdfc6def553c24cd50755f8c45e120a2210e66f8a3d2d2487d591158fe7439");
@@ -1125,6 +1134,14 @@ public class KeycardTest {
 
     response = cmdSet.loadLEEKey(seed);
     assertEquals(0x9000, response.getSw());
+
+    response = cmdSet.exportKey(new byte[0], KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
+    assertEquals(0x9000, response.getSw());
+    assertArrayEquals(expectedRootPublic, BIP32KeyPair.fromTLV(response.getData()).getPublicKey());
+
+    byte[] signData = "some data to be hashed".getBytes();
+    response = cmdSet.signWithPath(sha256(signData), "m", false);
+    verifySignResp(signData, response, expectedRootPublic);
 
     response = cmdSet.exportKey(new byte[] {(byte) 0x80, 0x00, 0x00, 0x2B, (byte) 0x80, 0x00, 0x00, 0x3C}, KeycardApplet.DERIVE_P1_SOURCE_MASTER, false, true);
     assertEquals(0x9000, response.getSw());
