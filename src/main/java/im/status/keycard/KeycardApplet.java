@@ -187,8 +187,8 @@ public class KeycardApplet extends Applet {
    * @param bLength length of the installation parameters
    */
   public KeycardApplet(byte[] bArray, short bOffset, byte bLength) {
-    crypto = new Crypto();
-    secp256k1 = new SECP256k1();
+    crypto = SharedMemory.crypto();
+    secp256k1 = SharedMemory.secp256k1();
 
     masterPublic = (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, SECP256k1.SECP256K1_KEY_SIZE, false);
     masterPrivate = (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE, SECP256k1.SECP256K1_KEY_SIZE, false);

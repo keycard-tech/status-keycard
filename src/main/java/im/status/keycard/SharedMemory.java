@@ -20,4 +20,23 @@ class SharedMemory {
   /** The certificate. It is the concatenation of: compressed id public key, CA signature. 
    * The signature is in the format r,s,v where v allows recovering the signer public key. */  
   static final byte[] idCert = new byte[(short)(CERT_LEN + 1)];
+
+  private static Crypto crypto;
+  private static SECP256k1 secp256k1;
+
+  static Crypto crypto() {
+    if (crypto == null) {
+      crypto = new Crypto();
+    }
+
+    return crypto;
+  }
+
+  static SECP256k1 secp256k1() {
+    if (secp256k1 == null) {
+      secp256k1 = new SECP256k1();
+    }
+
+    return secp256k1;
+  }
 }

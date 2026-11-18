@@ -41,10 +41,15 @@ Run `./gradlew convertJavacard`
 
 ## Installation
 
-Make sure the card you are trying to use is using the T=1 protocol and SCP02 with either the GlobalPlatform default keys (404142434445464748494a4b4c4d4e4f) or the Keycard development cards key (c212e073ff8b4bbfaff4de8ab655221f), otherwise this installation method will not work and you will need to use an external tool like [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro).
+`./gradlew install` runs [keycard-cli](https://github.com/keycard-tech/keycard-cli), which is downloaded from its GitHub releases the first time it is needed, checked against the digests in `buildSrc/src/main/resources/keycard-cli.properties` and cached in the Gradle home. The applets are reinstalled over the previous installation on every run.
 
-1. Disconnect all card reader terminals from the system, except the one with the card where you want to install the applet
-2. Run `./gradlew install`
+The card needs the T=1 protocol. Security Domains speaking SCP02 or SCP03 both work, since the protocol is read from the card's answer, and cards using one of the public development keys need no further setup.
+
+1. Put the card in a reader and run `./gradlew install`
+2. With more than one reader connected, select the one holding the card: `./gradlew install -Pim.status.keycard.reader="ACS ACR122U PICC Interface 00 00"`
+3. For a card loaded with other GlobalPlatform keys, give the key to the environment rather than to the command line: `KEYCARD_GP_MAC_KEY=<hex> ./gradlew install`
+
+To install with a keycard-cli you built yourself, or on a machine that cannot reach github.com, point the build at it with `-Pim.status.keycard.cli.path=/path/to/keycard`.
 
 ## Testing
 
@@ -59,7 +64,7 @@ before running the tests.
 # What kind of smartcards can I use? 
 * The applet requires JavaCard 3.0.5 or later.
 * The class byte of the APDU is not checked since there are no conflicting INS code.
-* The GlobalPlatform ISD keys are set to 404142434445464748494a4b4c4d4e4f (GlobalPlatform default keys) or c212e073ff8b4bbfaff4de8ab655221f (Keycard development cards default keys).
+* The GlobalPlatform ISD runs SCP02 or SCP03, with keys set to 404142434445464748494a4b4c4d4e4f (GlobalPlatform default keys) or c212e073ff8b4bbfaff4de8ab655221f (Keycard development cards default keys). Cards personalized with other keys are supported too, see [installation](#installation).
 * The exact list of algorithms the card must or can support is as follows.
   * Must be supported and is part of JavaCard 3.0.5:
     * KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY

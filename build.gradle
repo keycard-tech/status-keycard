@@ -74,7 +74,6 @@ test {
 }
 
 task install (type: im.status.keycard.build.InstallTask)
-task lock (type: im.status.keycard.build.LockTask) //DESTRUCTIVE: Running this task will lock you out of updating the applet!
 
 if (testTarget == 'card') {
   tasks.install.dependsOn(convertJavacard)
